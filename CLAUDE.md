@@ -248,7 +248,9 @@ enabling **Windows Developer Mode**, and is unrelated to the version pin.
 ## Before shipping
 
 - [ ] Add `build/icon.ico` — otherwise it ships with the default Electron icon.
-- [ ] Set `author` in `package.json` (electron-builder warns it is missing).
+- [x] Set `author` in `package.json`. It doubles as electron-builder's NSIS
+      publisher name — `electron-builder.json` sets no `publisherName`, so it
+      falls back to this.
 - [ ] Configure code signing — unsigned installers trigger SmartScreen.
 - [ ] Resolve the two packaging blockers above.
 - [ ] Consider code-splitting: the renderer bundle is ~740 kB (~230 kB gzipped).
