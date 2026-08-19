@@ -126,6 +126,53 @@ export async function run({ ev, reload, text, check, section, fixtures, app, del
   )
   fixtures.writeGameCmd()
 
+  /*
+   * Regression net for a real bug: pressing Play did nothing at all.
+   *
+   * `spawn()` has TWO failure paths and they behave differently. Some failures
+   * throw synchronously (EFTYPE, a non-program). Others arrive through the
+   * child's asynchronous `error` event (EACCES, observed with a game whose exe
+   * was locked by an already-running copy) — and by then `sessions:launch` has
+   * already resolved SUCCESSFULLY, so the reason used to be console.error'd in
+   * main and dropped on the floor. The UI flipped from "Playing" straight back
+   * to "Play" and said nothing at all.
+   *
+   * Only the synchronous path can be provoked portably: producing a real EACCES
+   * needs a locked binary or security software, neither of which a test can
+   * conjure. So the async path is covered by asserting the CONTRACT it depends
+   * on — that `launchError` exists on the event and is null for a normal exit —
+   * rather than by faking the operating system.
+   */
+  section('An unrunnable file reports why, in words')
+
+  const notAProgram = fixtures.posix(fixtures.notAnImage)
+  const dud = await ev(`window.api.games.create({name:'Dud', executablePath:'${notAProgram}'})`)
+  const dudId = dud?.data?.id
+
+  const dudLaunch = await ev(`window.api.sessions.launch(${dudId})`)
+  check('an unrunnable file is refused', dudLaunch?.ok === false, dudLaunch)
+  check(
+    'the message is words, not a raw errno',
+    !/EFTYPE|ENOEXEC|EACCES|^spawn /i.test(dudLaunch?.error ?? ''),
+    dudLaunch?.error
+  )
+  check(
+    'it says what to do instead',
+    /not a program|point this game at/i.test(dudLaunch?.error ?? ''),
+    dudLaunch?.error
+  )
+  check('it names the file', (dudLaunch?.error ?? '').includes('notes.txt'), dudLaunch?.error)
+  check('no session row is left behind', (await ev(`window.api.sessions.listForGame(${dudId})`))?.data?.length === 0)
+  check('the game is not left marked as running', (await ev('window.api.sessions.getRunning()'))?.data?.includes(dudId) === false)
+
+  // The contract the asynchronous path rides on.
+  check(
+    'session-ended events carry a launchError field',
+    ended?.[0]?.e !== undefined && 'launchError' in ended[0].e,
+    Object.keys(ended?.[0]?.e ?? {})
+  )
+  check('a genuinely ended session reports no launch error', ended?.[0]?.e?.launchError === null, ended?.[0]?.e?.launchError)
+
   section('Crash recovery: force-kill with a game still running')
   const stop4 = fixtures.stopFile('stop4')
   await ev(`window.api.games.update(${gameId}, {launchArgs:'"${fixtures.posix(stop4)}" 0'})`)

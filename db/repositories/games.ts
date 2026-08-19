@@ -1,7 +1,8 @@
-import type { Game, GameUpdate, NewGame } from '@shared/types'
+import type { Game, GameMetadataPatch, GameUpdate, MetadataSource, NewGame } from '@shared/types'
 import { getDb, transaction } from '../client'
 import {
   bindNullable,
+  readEnumOrNull,
   readNumber,
   readNumberOrNull,
   readString,
@@ -12,8 +13,41 @@ import {
 
 const COLUMNS = `
   id, name, executable_path, working_directory, launch_args, save_folder_path,
-  cover_image_path, total_playtime_seconds, last_played_at, created_at, updated_at
+  cover_image_path, genres, summary, release_date, metadata_source, metadata_id,
+  metadata_updated_at, total_playtime_seconds, last_played_at, created_at, updated_at
 `
+
+/**
+ * Declared as a Record keyed by the union rather than an array literal.
+ *
+ * An array typed `readonly MetadataSource[]` accepts a SHORT list happily, so
+ * adding a provider and forgetting this line compiles and then fails at runtime
+ * with "rawg is not one of igdb" the first time anyone applies metadata from it.
+ * That was a real bug. A Record forces every member to be present, so the
+ * omission is a compile error instead.
+ */
+const METADATA_SOURCE_KEYS: Record<MetadataSource, true> = { igdb: true, rawg: true }
+const METADATA_SOURCES = Object.keys(METADATA_SOURCE_KEYS) as readonly MetadataSource[]
+
+/**
+ * Genres are stored as a JSON array in one TEXT column.
+ *
+ * A value that will not parse, or that parses to something other than an array
+ * of strings, is reported as null — "we do not know" — rather than as an empty
+ * list. An empty list is a positive claim that the provider listed no genres,
+ * and a corrupt column is not evidence for that claim.
+ */
+function parseGenres(raw: string | null): string[] | null {
+  if (raw === null) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    if (!parsed.every((entry) => typeof entry === 'string')) return null
+    return parsed as string[]
+  } catch {
+    return null
+  }
+}
 
 function mapGame(row: SqlRow): Game {
   return {
@@ -24,6 +58,12 @@ function mapGame(row: SqlRow): Game {
     launchArgs: readStringOrNull(row, 'launch_args'),
     saveFolderPath: readStringOrNull(row, 'save_folder_path'),
     coverImagePath: readStringOrNull(row, 'cover_image_path'),
+    genres: parseGenres(readStringOrNull(row, 'genres')),
+    summary: readStringOrNull(row, 'summary'),
+    releaseDate: readStringOrNull(row, 'release_date'),
+    metadataSource: readEnumOrNull(row, 'metadata_source', METADATA_SOURCES),
+    metadataId: readStringOrNull(row, 'metadata_id'),
+    metadataUpdatedAt: readStringOrNull(row, 'metadata_updated_at'),
     totalPlaytimeSeconds: readNumber(row, 'total_playtime_seconds'),
     lastPlayedAt: readStringOrNull(row, 'last_played_at'),
     createdAt: readString(row, 'created_at'),
@@ -111,6 +151,50 @@ export function updateGame(id: number, patch: GameUpdate, now: string): Game {
 
   const updated = getGame(id)
   if (!updated) throw new Error(`Game ${id} not found after update`)
+  return updated
+}
+
+/**
+ * Writes the provider-supplied fields as a single unit.
+ *
+ * Separate from updateGame for the same reason GameMetadataPatch is separate
+ * from GameUpdate: these columns carry a provenance (source, provider id,
+ * fetched-at) that only the metadata flow may set. Writing them together also
+ * keeps the row internally consistent — a summary from one provider sitting
+ * next to genres from another would be a claim the schema could not detect as
+ * false.
+ *
+ * `genres` is always written, as `[]` when the provider listed none, because
+ * that is a real answer. Only a game that was never looked up keeps NULL.
+ */
+export function applyMetadata(id: number, patch: GameMetadataPatch, now: string): Game {
+  const result = getDb()
+    .prepare(
+      `UPDATE games
+          SET genres              = ?,
+              summary             = ?,
+              release_date        = ?,
+              metadata_source     = ?,
+              metadata_id         = ?,
+              metadata_updated_at = ?,
+              updated_at          = ?
+        WHERE id = ?`
+    )
+    .run(
+      JSON.stringify(patch.genres),
+      bindNullable(patch.summary),
+      bindNullable(patch.releaseDate),
+      patch.metadataSource,
+      patch.metadataId,
+      now,
+      now,
+      id
+    )
+
+  if (toNumber(result.changes) === 0) throw new Error(`Game ${id} not found`)
+
+  const updated = getGame(id)
+  if (!updated) throw new Error(`Game ${id} not found after metadata update`)
   return updated
 }
 

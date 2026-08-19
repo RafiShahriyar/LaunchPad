@@ -21,6 +21,7 @@ Currently traced:
 - [Change a setting](#change-a-setting) — done
 - [Reclaim orphaned backup folders](#reclaim-orphaned-backup-folders) — done
 - [Toggle fullscreen](#toggle-fullscreen) — done
+- [Look up game info from a metadata provider](#look-up-game-info-from-a-metadata-provider) — done
 
 ---
 
@@ -137,6 +138,43 @@ Differs from add in three places.
 | 4 | `GameFormModal.tsx` | On submit, the cover is sent **only if it changed** — otherwise `coverImagePath: undefined` omits it, so main does not re-hash an unchanged file. |
 | 5 | `electron/ipc/games.ts` | Only keys present on the patch are validated and written; omitted fields are untouched. A replaced cover is imported first, and the old file removed only after the new one is safely written. |
 | 6 | `gamesSlice.ts` | `updateGame.fulfilled` → `gamesAdapter.setOne`. |
+
+---
+
+## Look up game info from a metadata provider
+
+The only flow that reaches the network. Every network hop happens in main: the
+renderer sends a string and receives mapped results. Which provider answers is
+decided by `electron/services/metadata.ts`, the registry — the steps below are
+the same whichever one it picks.
+
+| # | Layer | File | What happens |
+|---|---|---|---|
+| 1 | Renderer | `src/components/GameFormModal.tsx` | The Name field is a `NameCombobox`, not a plain input — there is no separate "search" step to take. |
+| 2 | Renderer | `src/components/NameCombobox.tsx` | Dispatches `fetchMetadataStatus`. If no provider is configured it says so and names Settings — it does **not** render an empty result list, because "not set up" and "no matches" must not look alike. |
+| 2b | Renderer | `NameCombobox.tsx` | Typing schedules a search 350 ms later, and only from 2 characters. A request per keystroke would spend RAWG's monthly quota on prefixes nobody wanted results for. |
+| 3 | Renderer | `src/store/slices/metadataSlice.ts` | `searchMetadata(term)` stores the term in `state.query` so a stale response can be recognised later. |
+| 4 | Main | `electron/ipc/metadata.ts` | Validates the query as text within length limits. |
+| 5 | Main | `electron/services/metadata.ts` | The registry picks the active provider by `SEARCH_PRIORITY` (`igdb`, then `rawg`) and hands it the stored credentials. |
+| 6 | Main | `providers/igdb.ts` | *IGDB path:* reads the cached token from SQLite — unexpired with 60 s of slack → reuse, else mint one from Twitch. `escapeApicalypse()` escapes quotes and strips `;`/newlines, then `POST /v4/games` behind a 260 ms throttle (4 req/sec). A `401` clears the token and retries **once**, distinguishing a revoked token from a bad secret. |
+| 6b | Main | `providers/rawg.ts` | *RAWG path:* a keyed `GET /games`. No description is requested here — fetching one per row would make a single search thirteen requests against a monthly quota. |
+| 7 | Main | provider | Maps each entry to the same `MetadataSearchResult`, tagged with its `source`. Release dates normalise to `YYYY-MM-DD`; genre objects become names. |
+| 8 | Main | `providers/http.ts` | `attachThumbnails()` fetches every thumbnail **concurrently** and inlines it as a `data:` URI. Concurrent because these hit an image CDN, not the rate-limited API; serialising a dozen would add ~3 s per search. A failure yields `null` and never fails the search. |
+| 9 | Renderer | `metadataSlice.ts` | `fulfilled` compares the echoed `query` against `state.query` and **discards** the response if they differ, so a slow earlier search cannot overwrite the results on screen. |
+| 10 | Renderer | `GameFormModal.tsx` | Choosing a result fills the Name field immediately (visible and still editable) and stores the match. Nothing is written yet. |
+| 11 | Renderer | `GameFormModal.tsx` | On submit the game is created or updated **first**, by the ordinary `games:create` / `games:update` path. `savedGameId` is recorded so a retry cannot create the game twice. |
+| 12 | Renderer | `GameFormModal.tsx` | Then dispatches `applyMetadata`. `applyCover` is false if the user picked their own image — an explicit choice outranks a downloaded guess. |
+| 13 | Main | `electron/ipc/metadata.ts` | Re-validates the entry. It did a round trip through the renderer, so it is now untrusted input: `source` must be a known provider, genres must be a list, the release date must match `YYYY-MM-DD`, the cover URL must be `http(s)`. The thumbnail is discarded rather than trusted. |
+| 13b | Main | `services/metadata.ts` | `enrichResult()` asks the originating provider for anything its list endpoint omitted — for RAWG, the description. One request, for the one entry chosen. A failure returns the result unchanged. |
+| 14 | Main | `db/repositories/games.ts` | `applyMetadata()` writes genres, summary, release date and provenance in one statement. `genres` is written as `[]` when the provider listed none — a real answer, distinct from the NULL of a game never looked up. |
+| 14b | Main | `services/metadata.ts` | `resolveCoverUrl()` asks the art provider (SteamGridDB) for portrait box art by name, falling back to the metadata provider's own image. Run **once, here** — never per search result, which would be two extra requests for each of twelve rows about to be discarded. |
+| 15 | Main | `electron/services/covers.ts` | `importCoverFromUrl()` checks the declared type, the length, and the **leading bytes**, writes to `.tmp-…`, then renames. The rename is the commit point, the same rule the backup writer follows. |
+| 16 | Main | `electron/ipc/metadata.ts` | The old cover is deleted only after the row points at the new one. A download failure returns `coverError` instead of throwing — the text fields already applied, so it is a partial success. |
+| 17 | Renderer | `GameFormModal.tsx` | On full success the dialog closes. On `coverError` it stays open, says genres and description were saved but the art was not, and the primary button becomes **Done**. |
+
+**Why the local writes come before the network one:** so a failed download
+cannot discard work that succeeded. Reversing the order would mean a dropped
+connection loses the genres too.
 
 ---
 

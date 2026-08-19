@@ -125,6 +125,123 @@ function verifyUpgradeFromV1(): void {
   const latest = savesRepo.getLatestBackup(1)
   check('null hash does not falsely match a new fingerprint', latest?.contentHash !== 'some-hash')
 
+  // v3 columns: a game that predates the metadata feature has never been looked
+  // up, which must read as null and NOT as an empty genre list.
+  check('pre-metadata game reports unknown genres, not none', games[0]?.genres === null)
+  check('pre-metadata game has no source', games[0]?.metadataSource === null)
+
+  closeDatabase()
+  for (const suffix of ['', '-wal', '-shm']) rmSync(dbPath + suffix, { force: true })
+}
+
+/**
+ * Verifies the v2 -> v3 upgrade against a hand-built v2 database.
+ *
+ * Built by hand for the same reason the v1 test is: replaying the project's own
+ * migration list to produce the "old" database would only prove the list is
+ * self-consistent, not that a real user's v2 file survives the upgrade.
+ */
+function verifyUpgradeFromV2(): void {
+  section('Upgrade from an existing v2 database')
+
+  const dbPath = join(tmpdir(), `launchpad-upgrade-v2-${process.pid}.db`)
+  for (const suffix of ['', '-wal', '-shm']) rmSync(dbPath + suffix, { force: true })
+
+  const legacy = new DatabaseSync(dbPath, { enableForeignKeyConstraints: true })
+  legacy.exec(`
+    CREATE TABLE games (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+      executable_path TEXT NOT NULL, working_directory TEXT, launch_args TEXT,
+      save_folder_path TEXT, cover_image_path TEXT,
+      total_playtime_seconds INTEGER NOT NULL DEFAULT 0, last_played_at TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE play_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      started_at TEXT NOT NULL, ended_at TEXT, duration_seconds INTEGER,
+      exit_reason TEXT CHECK (exit_reason IN ('exited','crashed','app_closed','unknown'))
+    );
+    CREATE INDEX idx_sessions_game_started ON play_sessions(game_id, started_at DESC);
+    CREATE INDEX idx_sessions_open ON play_sessions(game_id) WHERE ended_at IS NULL;
+    CREATE TABLE save_backups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      backup_path TEXT NOT NULL, created_at TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL, file_count INTEGER NOT NULL,
+      trigger_type TEXT NOT NULL CHECK (trigger_type IN ('pre_launch','post_session','manual','pre_restore')),
+      is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0,1)),
+      content_hash TEXT
+    );
+    CREATE INDEX idx_backups_game_created ON save_backups(game_id, created_at DESC);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    PRAGMA user_version = 2;
+  `)
+  legacy
+    .prepare(
+      `INSERT INTO games (name, executable_path, cover_image_path, total_playtime_seconds, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run('Pre-metadata Game', 'C:/v2/game.exe', 'C:/covers/1-abc.png', 3600, iso(), iso())
+  legacy
+    .prepare(
+      `INSERT INTO save_backups (game_id, backup_path, created_at, size_bytes, file_count, trigger_type, content_hash)
+       VALUES (1, 'C:/v2/backup', ?, 100, 2, 'manual', 'hash-from-v2')`
+    )
+    .run(iso())
+  legacy.close()
+
+  const result = initDatabase({ dbPath, defaultBackupsRoot: join(tmpdir(), 'lp-backups') })
+  check('upgrade detected version 2', result.migratedFrom === 2, String(result.migratedFrom))
+  check('upgraded to the latest version', result.schemaVersion === LATEST_SCHEMA_VERSION)
+
+  const games = gamesRepo.listGames()
+  check('v2 game survived the migration', games.length === 1)
+  check('v2 playtime preserved', games[0]?.totalPlaytimeSeconds === 3600)
+  check('v2 cover path preserved', games[0]?.coverImagePath === 'C:/covers/1-abc.png')
+  check('v2 content hash preserved', savesRepo.listBackupsForGame(1)[0]?.contentHash === 'hash-from-v2')
+
+  // The whole point of the null/empty distinction.
+  check('migrated game reports genres as unknown', games[0]?.genres === null)
+  check('migrated game has no summary', games[0]?.summary === null)
+  check('migrated game has no release date', games[0]?.releaseDate === null)
+  check('migrated game has no metadata id', games[0]?.metadataId === null)
+
+  section('Metadata writes')
+  const applied = gamesRepo.applyMetadata(
+    1,
+    {
+      genres: ['Adventure', 'Platform'],
+      summary: 'A summary from the provider.',
+      releaseDate: '2017-02-24',
+      metadataSource: 'igdb',
+      metadataId: '1029'
+    },
+    iso(10)
+  )
+  check('genres round-trip as a list', applied.genres?.join(',') === 'Adventure,Platform')
+  check('summary stored', applied.summary === 'A summary from the provider.')
+  check('release date stored as a date, not a timestamp', applied.releaseDate === '2017-02-24')
+  check('provenance recorded', applied.metadataSource === 'igdb' && applied.metadataId === '1029')
+  check('fetched-at recorded', applied.metadataUpdatedAt === iso(10))
+  check('metadata write does not touch playtime', applied.totalPlaytimeSeconds === 3600)
+  check('metadata write does not touch the name', applied.name === 'Pre-metadata Game')
+
+  // "The provider listed no genres" is a real answer and must survive as one.
+  const emptied = gamesRepo.applyMetadata(
+    1,
+    {
+      genres: [],
+      summary: null,
+      releaseDate: null,
+      metadataSource: 'igdb',
+      metadataId: '1029'
+    },
+    iso(20)
+  )
+  check('an empty genre list stays empty, not null', Array.isArray(emptied.genres) && emptied.genres.length === 0)
+  check('a looked-up game is distinguishable from an unlooked-up one', emptied.genres !== null)
+
   closeDatabase()
   for (const suffix of ['', '-wal', '-shm']) rmSync(dbPath + suffix, { force: true })
 }
@@ -137,7 +254,7 @@ function main(): void {
   const init = initDatabase({ dbPath, defaultBackupsRoot: join(tmpdir(), 'lp-backups') })
   check('migrations applied to latest version', init.schemaVersion === LATEST_SCHEMA_VERSION)
   check('fresh database starts at version 0', init.migratedFrom === 0)
-  check('schema is at version 2 (content_hash migration applied)', init.schemaVersion === 2)
+  check('schema is at version 3 (game_metadata migration applied)', init.schemaVersion === 3)
 
   section('Settings')
   const defaults = settingsRepo.getSettings()
@@ -321,8 +438,9 @@ function main(): void {
 
   for (const suffix of ['', '-wal', '-shm']) rmSync(dbPath + suffix, { force: true })
 
-  // Runs last, against its own hand-built v1 database.
+  // Run last: each builds its own hand-made legacy database.
   verifyUpgradeFromV1()
+  verifyUpgradeFromV2()
 
   console.log(`\n${passed} passed, ${failures.length} failed`)
   if (failures.length > 0) {

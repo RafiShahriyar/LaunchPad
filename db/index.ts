@@ -16,6 +16,8 @@ export * as gamesRepo from './repositories/games'
 export * as sessionsRepo from './repositories/sessions'
 export * as savesRepo from './repositories/saves'
 export * as settingsRepo from './repositories/settings'
+export * as credentialsRepo from './repositories/credentials'
 
 export type { GameSessionStats } from './repositories/sessions'
 export type { BackupUsage } from './repositories/saves'
+export type { CachedToken } from './repositories/credentials'

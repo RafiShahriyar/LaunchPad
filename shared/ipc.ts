@@ -15,8 +15,10 @@
 import type {
   AppSettings,
   BackupTrigger,
+  CredentialProvider,
   Game,
   GameUpdate,
+  MetadataSource,
   NewGame,
   PlaySession,
   SaveBackup,
@@ -66,6 +68,13 @@ export const Channels = {
     close: 'window:close',
     // --- Push channel (main -> renderer) ---
     stateChanged: 'window:stateChanged'
+  },
+  metadata: {
+    search: 'metadata:search',
+    apply: 'metadata:apply',
+    getStatus: 'metadata:getStatus',
+    setCredentials: 'metadata:setCredentials',
+    clearCredentials: 'metadata:clearCredentials'
   },
   settings: {
     get: 'settings:get',
@@ -170,11 +179,25 @@ export interface SessionEndedEvent {
    * about. null only if the game was deleted while it was running.
    */
   game: Game | null
-  /** True when the session was too short to record. */
+  /** True when the session was too short to record, or never started at all. */
   discarded: boolean
   exitReason: SessionExitReason
   /** Process exit code, or null when terminated by a signal. */
   exitCode: number | null
+  /**
+   * Set when the process could not be STARTED, as opposed to having run and
+   * exited.
+   *
+   * These two are wildly different to a user — "you quit after two seconds" and
+   * "Windows refused to run this" — but they arrive on the same channel, because
+   * on Windows `spawn()` reports a failure to start asynchronously through the
+   * child's `error` event rather than by throwing. The launch IPC call has
+   * already resolved successfully by then, so this field is the only route the
+   * reason has back to the renderer. Without it a failed launch is silent, and
+   * the UI simply flips from "Playing" back to "Play" as though nothing
+   * happened. That was a real bug.
+   */
+  launchError: string | null
 }
 
 // --- Saves -------------------------------------------------------------------
@@ -262,6 +285,142 @@ export interface OrphanCleanupResult {
   failed: string[]
 }
 
+// --- Game metadata -----------------------------------------------------------
+
+/**
+ * One candidate returned by a provider search.
+ *
+ * `id` is a string even though IGDB's ids are numeric: it is an opaque handle
+ * that only ever travels back to the provider, and typing it as a number would
+ * invite arithmetic on it and lose precision on a provider that uses large or
+ * non-numeric ids.
+ */
+export interface MetadataSearchResult {
+  id: string
+  /**
+   * Which provider produced this entry.
+   *
+   * Carried on the result rather than inferred at apply time so the provenance
+   * stored on the game is the provider that actually supplied the values, even
+   * if the active provider changed between searching and saving.
+   */
+  source: MetadataSource
+  name: string
+  /** YYYY-MM-DD, or null when the provider lists no release date. */
+  releaseDate: string | null
+  /** Empty array means the provider listed none — not "unknown". */
+  genres: string[]
+  summary: string | null
+  /** Remote URL of full-size portrait box art, downloaded only when applied. */
+  coverUrl: string | null
+  /**
+   * A tiny preview of the box art, inlined as a `data:` URI by main.
+   *
+   * The picker is unusable without thumbnails — several editions of a game look
+   * identical by name alone. It is a data URI rather than a remote URL because
+   * the renderer's CSP sets `connect-src 'none'` and must keep doing so: the
+   * page opens no sockets of its own, and main already allows `img-src data:`.
+   * Fetching these in main costs one round trip per result against a CDN and
+   * keeps the sandbox exactly as tight as it was.
+   *
+   * Null when the entry has no cover, or when the thumbnail fetch failed —
+   * which is never treated as a failed search.
+   */
+  thumbnailDataUri: string | null
+}
+
+export interface MetadataSearchResponse {
+  /** The provider that answered, so the UI can attribute results. */
+  source: MetadataSource
+  /**
+   * Echoed back so the renderer can discard a slow response that arrives after
+   * the user has already retyped. Without it, an earlier request finishing last
+   * would overwrite the results for the query actually on screen.
+   */
+  query: string
+  results: MetadataSearchResult[]
+}
+
+export interface MetadataApplyOptions {
+  /** Overwrite the game's name with the provider's. */
+  applyName: boolean
+  /** Download the provider's cover art into the managed covers folder. */
+  applyCover: boolean
+}
+
+export interface MetadataApplyResult {
+  game: Game
+  /** The managed cover path, or null when none was requested or available. */
+  coverImagePath: string | null
+  /**
+   * Set when the metadata was written but the cover download failed. Reported
+   * rather than thrown: the text fields did apply, so this is a partial
+   * success, and failing the whole operation would discard work that succeeded.
+   */
+  coverError: string | null
+}
+
+/** One credential input a provider needs. */
+export interface ProviderField {
+  key: string
+  label: string
+  /** Rendered as a password box and never echoed back to the renderer. */
+  secret: boolean
+  placeholder: string
+}
+
+/**
+ * Everything the settings screen needs to render a provider it has never heard
+ * of.
+ *
+ * Declared in the contract rather than hard-coded in the UI so that adding a
+ * provider is a main-process change plus a union member — the settings screen
+ * does not grow a third branch each time.
+ */
+export interface ProviderDescriptor {
+  id: CredentialProvider
+  name: string
+  /** `metadata` supplies genres/summary/date; `art` supplies cover images only. */
+  role: 'metadata' | 'art'
+  fields: ProviderField[]
+  signupUrl: string
+  blurb: string
+}
+
+/**
+ * What the renderer is allowed to know about stored credentials.
+ *
+ * Deliberately excludes every secret and gives only a masked identifier. The
+ * renderer never needs the real values — main is the only side that talks to
+ * any provider.
+ */
+export interface ProviderCredentialStatus {
+  provider: CredentialProvider
+  configured: boolean
+  /** e.g. "abcd…wxyz", or null when nothing is stored. Never a secret. */
+  maskedKey: string | null
+  /** Whether a cached OAuth token is held. Only IGDB uses one. */
+  hasCachedToken: boolean
+}
+
+export interface MetadataStatus {
+  providers: ProviderDescriptor[]
+  credentials: ProviderCredentialStatus[]
+  /**
+   * The provider searches will actually use, or null when none is configured.
+   *
+   * Reported rather than inferred in the renderer so the settings screen can
+   * state which one is in use when more than one is set up, instead of leaving
+   * the user to guess.
+   */
+  activeSource: MetadataSource | null
+  /**
+   * True when an art provider is configured and can upgrade a landscape
+   * catalogue image to portrait box art at apply time.
+   */
+  artConfigured: boolean
+}
+
 // --- Window chrome -----------------------------------------------------------
 
 export interface WindowState {
@@ -345,6 +504,32 @@ export interface RendererApi {
     close: () => Promise<IpcResult<null>>
     /** Fires for F11, the OS fullscreen gesture, and maximise/restore alike. */
     onStateChanged: (callback: (state: WindowState) => void) => Unsubscribe
+  }
+  metadata: {
+    /**
+     * Searches the provider by name. Rejects (as an envelope) when no
+     * credentials are configured, rather than returning zero results — "not
+     * set up" and "no such game" must not look the same to the user.
+     */
+    search: (query: string) => Promise<IpcResult<MetadataSearchResponse>>
+    /** Writes the chosen entry onto the game, optionally fetching its cover. */
+    apply: (
+      gameId: number,
+      result: MetadataSearchResult,
+      options: MetadataApplyOptions
+    ) => Promise<IpcResult<MetadataApplyResult>>
+    /** Descriptors plus what is configured. One call drives the whole screen. */
+    getStatus: () => Promise<IpcResult<MetadataStatus>>
+    /**
+     * Verifies the values against the provider before storing them, so a bad
+     * key fails at the action that caused it rather than as a broken search.
+     * `values` is keyed by `ProviderField.key`.
+     */
+    setCredentials: (
+      provider: CredentialProvider,
+      values: Record<string, string>
+    ) => Promise<IpcResult<MetadataStatus>>
+    clearCredentials: (provider: CredentialProvider) => Promise<IpcResult<MetadataStatus>>
   }
   settings: {
     get: () => Promise<IpcResult<AppSettings>>

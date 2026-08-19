@@ -14,6 +14,7 @@ A running list of what actually works, updated as each feature lands.
 | 8 | Settings screen | **Done** |
 | + | Window chrome: custom title bar, controls + fullscreen | **Done** |
 | + | Collapsible sidebar | **Done** |
+| + | Game metadata (IGDB / RAWG + SteamGridDB artwork) | **Done** |
 | + | Sample data seeder (dev only) | **Done** |
 
 ---
@@ -339,6 +340,44 @@ with a live game.
 
 Launch arguments are parsed by a hand-written quote-aware splitter rather than
 `shell: true`, so a `&` or `|` in a path cannot execute additional commands.
+
+### A bug that shipped, and how it hid
+
+**"When I press Play, nothing happens."** No error, no banner, no session -- the
+button flicked back from "Playing" to "Play" and that was all.
+
+`spawn()` has two failure paths. Some failures throw **synchronously**; others
+arrive **asynchronously** through the child's `error` event. `EACCES` -- a game
+antivirus refuses to start -- takes the async path, which fires *after*
+`sessions:launch` has already resolved successfully. The launch thunk therefore
+had nothing left to reject with, and the handler only did this:
+
+```js
+console.error(`[launcher] failed to start game ${gameId}:`, err)   // message ends here
+onSessionEnd({ ..., discarded: true })                             // reason dropped
+```
+
+The renderer received a discarded session, indistinguishable from one the user
+quit after two seconds. `SessionEndedEvent.launchError` now carries the reason,
+the error banner that already existed renders it, and `describeSpawnFailure()`
+turns the errno into a sentence -- wired to **both** paths, since fixing one and
+leaving the other leaking a raw `spawn EFTYPE` is the obvious way to half-fix
+this.
+
+Only the synchronous path can be provoked in a test: producing a real `EACCES`
+needs a locked binary or antivirus interference, neither of which a suite can
+conjure. The async path is covered by asserting the contract it rides on --
+`launchError` present on the event, null for a normal exit -- rather than by
+faking the operating system.
+
+Diagnosing it also produced a finding no code change can address. On the dev
+machine, `CreateProcess` on `Hades2.exe` returns `EACCES` from Node and Electron,
+while `Start-Process` launches the same file fine and a byte-identical copy under
+a different name spawns without complaint. ACLs, attributes, manifest
+(`asInvoker`) and Mark-of-the-Web were all identical to a sibling executable in
+the same folder that works, and Defender logged cloud-protection activity at the
+moment of each attempt. LaunchPad cannot launch what the OS refuses to start --
+it can only stop pretending nothing happened.
 
 ### A bug the tests caught
 
@@ -982,6 +1021,194 @@ accessible names survive, the control relabels Collapse/Expand, the choice
 persists to settings, and it survives a reload.
 
 ---
+
+## Game metadata — Done
+
+Fills in cover art, genres, a summary and a release date, so adding a game does
+not mean hunting for box art by hand.
+
+### Three providers, and why
+
+| Provider | Role | Sign-up | Why it exists |
+|---|---|---|---|
+| **IGDB** | metadata | Twitch app + SMS 2FA | Richest: genres, summary AND portrait box art from one query |
+| **RAWG** | metadata | Email only | The no-phone path. Twitch's SMS 2FA fails outright in some countries |
+| **SteamGridDB** | art only | Steam login | Portrait box art, which is what makes RAWG usable in a 3:4 grid |
+
+IGDB was built first because one query returns everything. It turned out to have
+a hard gate: registering a Twitch application requires two-factor authentication,
+and Twitch's SMS delivery fails in a number of countries — the observed error is
+*"We weren't able to register two-factor authentication for your phone number"*,
+with no workaround, because Twitch only unlocks its authenticator-app option
+after a phone number has been verified.
+
+RAWG needs an email address and nothing else. Its weakness is artwork:
+`background_image` is a landscape screenshot, and the library grid draws portrait
+3:4 cards, so it crops to a useless middle sliver. SteamGridDB supplies community
+box art at 600x900 and closes exactly that gap. **RAWG + SteamGridDB is the
+recommended pair**, and neither asks for a phone number.
+
+Search priority is `['igdb', 'rawg']`, and the settings screen **states which
+provider is in use** rather than leaving it to be inferred from the results.
+
+### How it works end to end
+
+1. **Settings → Game metadata** takes whichever keys you have. Saving verifies
+   them against the live service **before storing anything** — a bad key fails at
+   the moment it is entered, not later as a search that looks broken.
+2. In the add/edit dialog, **the Name field itself is a searchable dropdown**.
+   Typing two or more characters searches the provider after a 350 ms debounce
+   and lists matches beneath the field, each with a thumbnail, year and genres.
+   Arrow keys move, Enter selects, Escape closes the list without closing the
+   form. This replaced a separate "Find game info…" panel — looking a game up
+   was a deliberate second step when the user is already typing its name.
+3. The search runs in main (`electron/services/metadata.ts`), which posts an
+   Apicalypse query to IGDB, maps the response, and fetches each result's
+   thumbnail.
+4. Choosing a result fills the Name field immediately — visible and still
+   editable — and records the match.
+5. Saving writes genres, summary, release date and provenance, then downloads
+   the full-size cover into the managed covers folder.
+
+### The renderer still opens no sockets
+
+This is the constraint that shaped the design. The renderer's CSP sets
+`connect-src 'none'` and the point was to keep it that way, so:
+
+- **Search thumbnails are `data:` URIs produced in main**, not remote URLs.
+  `img-src` already allowed `data:`, so adding this entire feature **changed the
+  CSP by nothing**.
+- Only the full-size cover touches the disk, and only when a match is applied.
+  It goes through the same managed-covers pipeline as a hand-picked image, so it
+  is served by the existing `lpasset://` handler with its existing containment
+  check.
+
+### The credentials are not a setting
+
+`settings:get` returns the whole `AppSettings` object to the renderer, so a
+secret placed there would sit in the Redux store and be readable from devtools.
+Credentials live in `db/repositories/credentials.ts` instead — same table,
+deliberately not the same surface, under derived `cred_<provider>_<field>` keys
+so adding a provider needs no change there at all. The renderer only ever
+receives `{configured, maskedKey, hasCachedToken}`, and the suite asserts the key
+appears in neither that payload nor `settings:get`.
+
+The settings screen renders each provider from a `ProviderDescriptor` that main
+supplies — name, blurb, sign-up URL and field list. Nothing in the UI names a
+provider, so adding a fourth is a main-process change plus a union member.
+
+The OAuth token is cached in SQLite, not memory: IGDB tokens last around sixty
+days, so re-authenticating per app start would waste a request against a
+rate-limited endpoint and would fail the session's first search whenever the
+network happened to be down at launch.
+
+### Ordering, and why a failed cover is not a failed apply
+
+`metadata:apply` writes the local fields first and downloads the cover last.
+A download failure therefore leaves the genres and summary applied and returns
+`coverError` — a partial success — rather than discarding work that succeeded.
+The dialog stays open and says exactly that. Closing silently would be the app
+claiming a result it did not achieve.
+
+The dialog also remembers that it already created the row, so retrying after a
+metadata failure updates that game rather than adding a second copy of it.
+
+### A cover the user picked always wins
+
+If the user chose their own image *and* a match, the downloaded art is skipped
+and the dialog says so before saving. They made that choice deliberately;
+replacing it with a guess would discard an explicit decision.
+
+### Injection was a real consideration
+
+Apicalypse is a query language and the search term is interpolated into it — the
+same shape of problem as SQL injection. `escapeApicalypse()` escapes backslashes
+and quotes so a term cannot close the string literal, and strips `;` and newlines
+so it cannot append a clause. The suite asserts a crafted term produces exactly
+one `search` clause in the outgoing body.
+
+### Two bugs the suite caught
+
+Both compiled cleanly and would have shipped:
+
+1. **`verify()` cached IGDB's token, then storing the credentials wiped it.**
+   Writing credentials deliberately clears any cached token, because one minted
+   by the old pair cannot authenticate the new one — so the token proven good
+   during verification was destroyed moments later and the next search silently
+   re-authenticated. `verify()` now *returns* the token and the registry persists
+   it after the credentials land.
+2. **Adding `'rawg'` to `MetadataSource` did not force the enum lists to update.**
+   `readonly MetadataSource[]` accepts a short array happily, so
+   `const METADATA_SOURCES: readonly MetadataSource[] = ['igdb']` still compiled,
+   then threw `Column "metadata_source": rawg is not one of igdb` the first time
+   RAWG metadata was applied. Both lists are now `Record<MetadataSource, true>`
+   plus `Object.keys()`, which makes a missing member a compile error — the
+   outcome the union was supposed to guarantee in the first place.
+
+### Viewing artwork, and admitting when there is none
+
+Cover art is drawn at 80-128px. Real box art carries a title and small print that
+is unreadable at that size, so every cover — in the form, on the detail header —
+opens full size on click. The viewer is deliberately not part of `uiSlice`'s
+modal union: it is a detail *of* the game form, not a second dialog competing
+with it, and registering it there would either close the form underneath or break
+the "one modal at a time" invariant. It sits at `z-[60]`, and both it and the
+combobox stop Escape from propagating to `Modal`'s document listener — otherwise
+one keypress would discard everything the user had typed.
+
+Absent artwork is **stated in words**. A bare placeholder is ambiguous: it reads
+equally as "this game has no art" and "the art failed to load". Cards and the
+detail header show the game's initials plus "No cover", the form says "No cover
+image" (or "None yet — one will be downloaded when you save" when a match is
+pending), and a suggestion row with no thumbnail says "No art".
+
+### Verified — 110 assertions
+
+Run against a **local stub HTTP server**, not the real IGDB: live credentials
+should not be committed, the rate limit is shared with whatever the developer is
+doing, and a network round trip makes a suite fail for reasons unrelated to the
+code. Every base URL in the service is overridable through the environment
+precisely so the suite can redirect it, and `tests/run.mjs` grew a `setup()` hook
+so a suite can stand the stub up before the app spawns.
+
+Covered: not-configured messaging, rejected keys not being stored, the secret not
+crossing back, search mapping for two providers, empty-vs-missing genres,
+thumbnails arriving as data URIs, lazy enrichment costing exactly one request,
+SteamGridDB replacing a landscape cover with a portrait one, provider priority
+when several are configured, token reuse, query injection, apply with and without
+a cover, the row on disk matching what was reported, nine malformed-input cases,
+and credential removal taking the cached token with it.
+
+### Known limitations
+
+- **The user must register their own key.** There is no shared one and should not
+  be: a key committed to a public repository is a key that gets revoked.
+- **IGDB is unreachable without SMS two-factor on a Twitch account**, which fails
+  in some countries. RAWG exists for that reason and is a first-class source, not
+  a fallback.
+- **RAWG artwork is landscape** and crops badly without SteamGridDB alongside it.
+- **Art matching is by name.** SteamGridDB is queried with the game's title and
+  the first autocomplete hit is used, so an oddly-named entry can match the wrong
+  game's art. A manual override is the obvious next step.
+- **Only one art provider is consulted**, at apply time only.
+- **No bulk matching.** One game at a time, from its edit dialog. Matching a
+  whole library needs rate limiting, partial-failure reporting and a review step
+  before applying — a feature in its own right.
+- **Nothing re-fetches.** `metadata_id` and `metadata_updated_at` are stored so
+  a refresh can re-query the exact entry rather than re-searching by name, but
+  no code calls it yet.
+- **The summary is stored but never displayed** outside the picker. Showing it
+  on the detail page is pure UI work with no backend left to do.
+- **Genres are not filterable or shown in the library.** They are stored as a
+  JSON array precisely because nothing queries them individually yet; filtering
+  is what would justify a join table and an index.
+- **`MetadataSource` is a union** rather than a free string so adding a provider
+  forces every switch over it to be revisited — but note the enum-list trap
+  recorded above: an array literal typed as the union is *not* checked for
+  exhaustiveness.
+- **Credentials are stored in plaintext.** On a single-user desktop app the
+  database is already readable by anyone who can read the user's profile, so
+  encrypting it with a key stored beside it would be theatre.
 
 ## Sample data (development only)
 

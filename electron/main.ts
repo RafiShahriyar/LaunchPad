@@ -6,6 +6,7 @@ import { registerGamesHandlers } from './ipc/games'
 import { registerSessionHandlers } from './ipc/sessions'
 import { registerSavesHandlers } from './ipc/saves'
 import { registerSettingsHandlers } from './ipc/settings'
+import { registerMetadataHandlers } from './ipc/metadata'
 import { broadcastWindowState, needsCustomControls, registerWindowHandlers } from './ipc/window'
 import { cleanupAbandonedTempFolders } from './services/backups'
 import { cleanupAbandonedRestoreFolders } from './services/restore'
@@ -204,6 +205,7 @@ if (!gotTheLock) {
     registerSessionHandlers()
     registerSavesHandlers()
     registerSettingsHandlers()
+    registerMetadataHandlers()
     registerWindowHandlers(() => mainWindow)
 
     /*

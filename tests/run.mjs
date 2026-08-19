@@ -50,8 +50,16 @@ async function main() {
 
     let app
     let client
+    let setup = null
     try {
-      app = await launchApp(profileDir)
+      /*
+       * A suite may stand something up (a stub server, say) before the app
+       * launches and hand back environment overrides pointing at it. Done here
+       * rather than inside run() because the environment must be set at spawn
+       * time, and the runner owns the spawn.
+       */
+      setup = suite.setup ? await suite.setup() : null
+      app = await launchApp(profileDir, setup?.env)
       client = await connect()
       // Let the renderer mount and finish its initial IPC round trips.
       await delay(2200)
@@ -77,6 +85,7 @@ async function main() {
     } finally {
       client?.close()
       app?.kill()
+      await setup?.teardown?.()
       fixtures.cleanup()
       await delay(600)
     }

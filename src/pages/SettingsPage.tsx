@@ -5,6 +5,13 @@ import { Button } from '@/components/Modal'
 import { formatBytes } from '@/lib/format'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { fetchBackupUsage } from '@/store/slices/savesSlice'
+import type { ProviderDescriptor } from '@shared/ipc'
+import {
+  clearCredentials,
+  credentialsErrorCleared,
+  fetchMetadataStatus,
+  saveCredentials
+} from '@/store/slices/metadataSlice'
 import {
   cleanupOrphans,
   fetchAppInfo,
@@ -209,6 +216,8 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      <MetadataSection />
+
       <DeveloperSection />
 
       <Section title="About" description="Runtime information, useful when reporting a problem.">
@@ -249,6 +258,194 @@ export function SettingsPage() {
  * production bundle entirely rather than merely hidden. Main refuses the channel
  * when packaged regardless — the renderer decides what to show, not what exists.
  */
+/**
+ * Metadata provider credentials.
+ *
+ * Every provider is rendered from its own `ProviderDescriptor`, supplied by
+ * main. Nothing here names IGDB, RAWG or SteamGridDB, so adding a fourth
+ * provider is a main-process change plus a union member — this screen does not
+ * grow another branch each time.
+ *
+ * Secrets are write-only from the renderer's point of view: sent to main once
+ * and never returned. All this screen gets back is a boolean and a masked
+ * identifier, so a secret never lands in the Redux store where devtools would
+ * show it. That is also why these values are not part of AppSettings — see
+ * db/repositories/credentials.ts.
+ */
+function MetadataSection() {
+  const dispatch = useAppDispatch()
+  const { status } = useAppSelector((state) => state.metadata)
+
+  useEffect(() => {
+    void dispatch(fetchMetadataStatus())
+  }, [dispatch])
+
+  const metadataProviders = status?.providers.filter((entry) => entry.role === 'metadata') ?? []
+  const artProviders = status?.providers.filter((entry) => entry.role === 'art') ?? []
+  const activeName = status?.providers.find((entry) => entry.id === status.activeSource)?.name ?? null
+
+  return (
+    <Section
+      title="Game metadata"
+      description="Optional. Lets LaunchPad fill in cover art, genres and descriptions."
+    >
+      {/*
+        States which provider searches actually use. With more than one
+        configured that choice would otherwise be invisible, leaving the user to
+        infer it from the results.
+      */}
+      {activeName ? (
+        <p className="text-sm text-slate-300">
+          Searches use <span className="text-slate-100">{activeName}</span>
+          <span className="text-slate-500">
+            {status?.artConfigured
+              ? ' · covers upgraded to portrait box art'
+              : ' · covers come from the same source'}
+          </span>
+        </p>
+      ) : (
+        <p className="text-sm text-slate-400">
+          No provider configured. Game info search is unavailable until you add one below.
+        </p>
+      )}
+
+      <div>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Metadata — genres, descriptions, dates
+        </h3>
+        <p className="mb-3 text-xs text-slate-600">
+          Configure one. If both are set, the first listed is used.
+        </p>
+        <div className="flex flex-col gap-4">
+          {metadataProviders.map((provider) => (
+            <ProviderCard key={provider.id} provider={provider} />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Cover art
+        </h3>
+        <p className="mb-3 text-xs text-slate-600">
+          Optional. The library grid draws portrait 3:4 cards, and most catalogue APIs return
+          landscape screenshots that crop badly into that shape.
+        </p>
+        <div className="flex flex-col gap-4">
+          {artProviders.map((provider) => (
+            <ProviderCard key={provider.id} provider={provider} />
+          ))}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+function ProviderCard({ provider }: { provider: ProviderDescriptor }) {
+  const dispatch = useAppDispatch()
+  const { status, credentialsStatus, credentialsError, credentialsProvider } = useAppSelector(
+    (state) => state.metadata
+  )
+  const [values, setValues] = useState<Record<string, string>>({})
+
+  const credentials = status?.credentials.find((entry) => entry.provider === provider.id)
+  const configured = credentials?.configured ?? false
+
+  // Progress and errors belong to the card that caused them, not to every card.
+  const mine = credentialsProvider === provider.id
+  const busy = mine && credentialsStatus === 'loading'
+  const error = mine ? credentialsError : null
+  const justSaved = mine && credentialsStatus === 'succeeded' && !credentialsError
+
+  const complete = provider.fields.every((field) => (values[field.key] ?? '').trim().length > 0)
+
+  const save = async () => {
+    try {
+      const trimmed = Object.fromEntries(
+        provider.fields.map((field) => [field.key, (values[field.key] ?? '').trim()])
+      )
+      await dispatch(saveCredentials({ provider: provider.id, values: trimmed })).unwrap()
+      // Only clear the inputs once the values have been accepted, so a rejected
+      // key does not have to be typed out again.
+      setValues({})
+    } catch {
+      // credentialsError already holds the reason.
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-surface-700 bg-surface-900/40 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-200">{provider.name}</p>
+          <p className="mt-0.5 text-xs text-slate-500">{provider.blurb}</p>
+          <p className="mt-1 break-all text-xs text-slate-600">
+            Get a key at <span className="text-slate-500">{provider.signupUrl}</span>
+          </p>
+        </div>
+        {configured && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              void dispatch(clearCredentials(provider.id))
+            }}
+          >
+            Remove
+          </Button>
+        )}
+      </div>
+
+      {configured && (
+        <p className="mt-3 font-mono text-xs text-emerald-500">
+          Connected · {credentials?.maskedKey}
+          {/*
+            Saying whether a token is held explains why searching keeps working
+            without re-authenticating, rather than it looking like chance.
+          */}
+          {credentials?.hasCachedToken ? ' · access token cached' : ''}
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-col gap-2">
+        {provider.fields.map((field) => (
+          <input
+            key={field.key}
+            className={settingsInputClass}
+            type={field.secret ? 'password' : 'text'}
+            value={values[field.key] ?? ''}
+            onChange={(event) => {
+              const next = event.target.value
+              setValues((previous) => ({ ...previous, [field.key]: next }))
+              if (error) dispatch(credentialsErrorCleared())
+            }}
+            placeholder={configured ? `Replace ${field.label.toLowerCase()}` : field.placeholder}
+            spellCheck={false}
+            aria-label={`${provider.name} ${field.label}`}
+          />
+        ))}
+        <div>
+          <Button onClick={save} disabled={!complete || busy}>
+            {busy ? 'Checking…' : configured ? 'Replace' : 'Save'}
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+          {error}
+        </p>
+      )}
+
+      {justSaved && (
+        <p className="mt-3 text-sm text-emerald-400">Verified with {provider.name} and saved.</p>
+      )}
+    </div>
+  )
+}
+
+const settingsInputClass =
+  'w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent-500 focus:outline-none'
+
 function DeveloperSection() {
   const dispatch = useAppDispatch()
   const [result, setResult] = useState<string | null>(null)

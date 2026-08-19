@@ -256,6 +256,16 @@ covers the shipped app without crippling development.
 Note `connect-src 'none'`: the renderer is forbidden from opening network
 connections of its own. Everything goes through IPC.
 
+This survived the metadata feature intact, which is the point worth recording.
+Fetching cover art and genres from IGDB is inherently a network feature, and the
+obvious implementation -- let the picker load thumbnails straight from the
+provider's CDN -- would have meant widening `connect-src` and `img-src` and
+giving the page its own network reach. Instead `electron/services/metadata.ts`
+fetches the thumbnails in main and inlines them as `data:` URIs, which `img-src`
+already permitted. **The CSP is byte-for-byte what it was before the feature
+existed.** The renderer sends a query string and receives mapped results; it
+never sees a URL, a token or a secret.
+
 ### Pinned versions and why
 
 | Package | Version | Reason |
@@ -287,6 +297,13 @@ electron/           main process - the only layer with real privileges
     backups.ts      snapshot copy, fingerprinting, rotation
     restore.ts      validation, safety snapshot, atomic folder swap
     maintenance.ts  finds and reclaims unreferenced backup folders
+    metadata.ts     provider registry: selection, enrichment, cover resolution
+    providers/      one client per service, all provider-specific code
+      http.ts         shared fetch/throttle/thumbnail helpers
+      types.ts        the interface a provider implements
+      igdb.ts         OAuth token, Apicalypse query, response mapping
+      rawg.ts         keyed REST, lazy description enrichment
+      steamgriddb.ts  portrait box art only
     demoData.ts     dev-only sample library (generates real PNG covers)
 db/                 SQLite data layer - imports NOTHING from Electron
   client.ts         connection, pragmas, transaction() helper

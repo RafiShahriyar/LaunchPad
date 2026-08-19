@@ -83,8 +83,18 @@ const sessionsSlice = createSlice({
      * active marker without being added to history.
      */
     sessionEnded(state, action: PayloadAction<SessionEndedEvent>) {
-      const { gameId, session, discarded } = action.payload
+      const { gameId, session, discarded, launchError } = action.payload
       delete state.activeByGameId[gameId]
+
+      /*
+       * A game that never started reports its reason here rather than through
+       * the launch thunk: on Windows `spawn()` signals a failure to start
+       * asynchronously, long after the launch IPC call has already resolved
+       * successfully. Routing it into the same `launchError` the banner already
+       * renders is what stops a failed launch from looking like nothing
+       * happened at all.
+       */
+      if (launchError) state.launchError = launchError
 
       if (discarded || !session) return
 

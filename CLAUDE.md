@@ -5,10 +5,11 @@ up / restore their save files. Electron + React + TypeScript + Redux Toolkit,
 SQLite via `node:sqlite`.
 
 All 8 planned features are built, plus custom window chrome (dark title bar,
-self-drawn window controls, fullscreen), a collapsible sidebar, and a dev-only
-sample-data seeder. **393 assertions pass** — 76 in the data-layer suite and 317
-end-to-end against a live Electron window. Both are committed and runnable with
-`npm test`.
+self-drawn window controls, fullscreen), a collapsible sidebar, game-metadata
+lookup (cover art, genres, summaries) from IGDB or RAWG with optional
+SteamGridDB artwork, and a dev-only sample-data seeder.
+**544 assertions pass** — 97 in the data-layer suite and 447 end-to-end against a
+live Electron window. Both are committed and runnable with `npm test`.
 
 Repository: <https://github.com/RafiShahriyar/LaunchPad>
 
@@ -27,8 +28,8 @@ npm run dev        # electron-vite dev --watch : renderer HMR + main/preload res
 npm run build      # typecheck both projects, then build all three targets to out/
 npm start          # run the production build unpackaged
 npm run typecheck  # both tsconfig projects
-npm run verify:db  # 76-assertion data-layer suite (plain Node, ~1s)
-npm run test:e2e   # 317 assertions against a real Electron window (~3 min)
+npm run verify:db  # 97-assertion data-layer suite (plain Node, ~1s)
+npm run test:e2e   # 447 assertions against a real Electron window (~3 min)
 npm test           # both
 npm run dist       # build + electron-builder → Windows (see Packaging below)
 ```
@@ -110,6 +111,98 @@ be blocked, killing HMR) and can't be an HTTP header (the packaged app loads ove
 the renderer can't load `file://` from the dev server's http origin. The handler
 is confined to the managed covers folder and rejects traversal.
 
+**Metadata thumbnails are `data:` URIs, not remote URLs.** The renderer's CSP
+sets `connect-src 'none'` and must keep doing so — the page opens no sockets of
+its own. So the provider clients fetch thumbnails in **main** and inline them as
+base64 in the search result. `img-src` already allowed `data:`, so **adding the
+whole metadata feature changed the CSP by nothing**. The full-size cover stays a
+URL and is only downloaded when a match is applied.
+- Thumbnail fetches deliberately bypass each provider's `throttle()`. That budget
+  exists for the documented API limit; thumbnails hit a plain image CDN, and
+  serialising a dozen would add ~3s to every search.
+- `apply` **discards** the thumbnail the renderer sends back and re-resolves the
+  cover. Trusting bytes returned by the untrusted side buys nothing.
+
+**Three providers, one registry.** `electron/services/providers/` holds one
+client per service; `electron/services/metadata.ts` is the registry and the only
+file that knows which exist. Everything above it — IPC contract, repository,
+schema, settings screen — is provider-agnostic, and the settings screen renders
+each provider from its own `ProviderDescriptor` rather than a hard-coded branch.
+- `igdb` and `rawg` supply text (`MetadataSource`); `steamgriddb` supplies art
+  only (`CoverArtSource`) because it has no genres or descriptions.
+- Search priority is `['igdb', 'rawg']` — IGDB is complete from one query. The
+  settings screen **states which one is in use** rather than leaving it inferred.
+- The art provider runs at **apply** time only, never per search result: twelve
+  results would be twenty-four requests for artwork about to be discarded.
+- RAWG's list endpoint carries no description, so `enrich()` fetches it for the
+  single chosen entry. Doing it per row would be 13 requests against a monthly
+  quota.
+
+**Enumerating a union as an array literal is a trap.** `readonly MetadataSource[]`
+happily accepts a SHORT list, so adding `'rawg'` and forgetting one array
+compiled fine and then failed at runtime with
+`Column "metadata_source": rawg is not one of igdb`. That was a real bug, caught
+only by the e2e suite. Both lists are now
+`Record<MetadataSource, true>` with `Object.keys()`, which makes a missing member
+a compile error. Do the same for any new union enumerated this way.
+
+**Provider credentials are NOT in `AppSettings`.** `settings:get` hands the whole
+settings object to the renderer, so a secret there would sit in the Redux store
+and be readable from devtools. They live in `db/repositories/credentials.ts`
+under derived `cred_<provider>_<field>` keys — same settings table, deliberately
+not the same surface. The renderer only ever receives
+`{configured, maskedKey, hasCachedToken}`. **This is why the four-place "adding a
+setting" recipe below does not apply to them.**
+- Credentials are verified against the live service *before* being stored, so a
+  bad key fails at the action that caused it rather than as a broken search.
+- `verify()` **returns** a token rather than caching it. Storing credentials
+  deliberately clears any cached token, so a token written during verification
+  was wiped moments later — another real bug the suite caught. The registry
+  persists it after the credentials land.
+- IGDB's OAuth token is cached in SQLite because tokens last ~60 days;
+  re-authenticating per app start would be a pointless request and would fail
+  the session's first search whenever the network is briefly down at launch.
+- A 401 mid-session triggers exactly one retry with a freshly minted token. A
+  revoked token and a bad secret are otherwise indistinguishable, and without
+  the retry the feature would stay broken until credentials were re-entered.
+
+**The name field is a combobox, not an input plus a search button.** Typing in
+it searches the metadata provider directly (`src/components/NameCombobox.tsx`).
+It replaced a separate "Find game info…" panel, which made looking a game up a
+deliberate second step when the user is already typing the name into a box.
+- **Debounced 350 ms, minimum 2 characters.** Not cosmetic: RAWG's free tier is
+  a monthly request quota, so a request per keystroke spends it on prefixes
+  nobody wanted results for, and a single letter matches thousands of games.
+- **Escape must `stopPropagation()`.** `Modal` listens for Escape on `document`
+  to dismiss the whole form, so without it one keypress closes the suggestions
+  *and* discards everything the user typed. Same trap in `CoverViewer`, which
+  additionally registers in the **capture** phase — Modal's listener is attached
+  first, so a bubble-phase handler runs after the form has already closed.
+- Selecting an entry sets a `justSelected` ref so the programmatic name change
+  does not immediately re-open the list over the answer just chosen.
+- Options are chosen on **mousedown**, not click: the input's blur would
+  otherwise close the list before the click landed.
+
+**`CoverViewer` is deliberately NOT in `uiSlice`'s modal union.** That union
+exists to make two simultaneously-open dialogs unrepresentable; the viewer is a
+detail *of* the game form, not a competitor to it. Registering it would either
+close the form underneath or break the invariant. It renders at `z-[60]`, one
+layer above `Modal`'s `z-50`.
+- **Use `z-[60]`, not `z-60`.** Tailwind's default z-index scale stops at 50, so
+  `z-60` is silently dropped and the viewer renders *under* the dialog it was
+  opened from.
+
+**Hooks go above the early return in `GameDetailPage`.** It returns early when
+the game is gone, so a `useState` declared next to the markup that uses it
+changes the hook count the moment a game is deleted while its detail view is
+open — React then throws instead of showing the library. That was a real
+regression, caught by `detail-view`.
+
+**Missing artwork is stated, never implied.** A bare placeholder reads equally as
+"this game has no art" and "the art failed to load". Cards, the detail header and
+the form all say "No cover" / "No cover image" and carry `data-testid="no-cover"`;
+suggestion rows with no thumbnail say "No art".
+
 **The title bar AND the window buttons are ours.** `titleBarStyle: 'hidden'`
 with **no** `titleBarOverlay`; `TitleBar.tsx` draws minimise/maximise/close.
 - This was a reversal. The overlay keeps the real system buttons (and Snap
@@ -152,6 +245,22 @@ writing anything; take a **pinned** `pre_restore` snapshot; then swap with two
 renames (move current aside, move new in). Abort the whole restore if the safety
 backup fails.
 
+**`spawn()` has two failure paths, and they behave differently.** Some failures
+throw **synchronously** (`EFTYPE`, a file that is not a program). Others arrive
+**asynchronously** through the child's `error` event (`EACCES`, observed with a
+game Defender refused to start) — and by then `sessions:launch` has *already
+resolved successfully*, so the launch thunk cannot report them.
+- `SessionEndedEvent.launchError` exists solely to carry that reason back. Before
+  it, the message was `console.error`'d in main and dropped: the UI flipped from
+  "Playing" back to "Play" and said nothing, indistinguishable from a session the
+  user quit instantly. **"Nothing happens when I press Play" was the bug report.**
+- `describeSpawnFailure()` must stay wired to **both** paths. It is easy to fix
+  one and leave the other leaking a raw `spawn EFTYPE` into the banner.
+- Only the synchronous path can be provoked in a test. Producing a real `EACCES`
+  needs a locked binary or antivirus interference, so the async path is covered
+  by asserting the contract (`launchError` present, null on a normal exit) rather
+  than by faking the OS.
+
 **Shutdown hooks are synchronous.** Electron does not await promises during
 quit. Sessions are written on `before-quit`, the DB closes on `will-quit`. A
 promise-based version silently loses the final writes.
@@ -182,6 +291,62 @@ and is worth preserving:
 - Zero-duration sessions render as **"Unknown"**, not "0s".
 - Backup **skips are surfaced** ("Saves have not changed since the last backup"),
   not silently swallowed — otherwise the button looks broken.
+- **`genres` distinguishes `null` from `[]`.** Null is "never looked up"; `[]` is
+  "looked up, and the provider listed none". Collapsing them would make the app
+  state that a game has no genres when it has simply never been asked about. The
+  repository returns null for a column that will not parse, too — a corrupt
+  value is not evidence for the positive claim that there are no genres.
+- **"Not configured" never looks like "no results."** A search with no
+  credentials fails with a message naming Settings, rather than returning an
+  empty list that reads as "your game isn't in the database".
+- **A failed cover download is reported as a partial success.** The genres and
+  summary did apply, so the dialog stays open and says exactly that instead of
+  closing silently and implying everything worked.
+- **A missing release year renders as "Year unknown"**, not omitted, so a row
+  never implies the provider has no date on record.
+
+---
+
+## Setup gotchas hit on this machine (August 2026)
+
+All four cost real debugging time. None are project bugs; all are recorded so the
+next person does not rediscover them.
+
+**Electron 43 ships NO `postinstall` script.** Its `package.json` has no
+`scripts` field at all — `install.js` is published as a bin
+(`install-electron`). `npm install` therefore finishes in ~40s and **never**
+downloads the ~235 MB `electron.exe`, and `npm run dev` then fails on the missing
+binary. The fix is to run it explicitly, once:
+
+```bash
+node node_modules/electron/install.js
+```
+
+README used to claim `npm install` downloads it and that a fast install meant a
+"skipped postinstall". Both were false and have been corrected.
+
+**PowerShell blocks `npm` by default.** Execution policy `Restricted` refuses
+`npm.ps1` with *"running scripts is disabled on this system"*. This is **not** a
+permissions problem and running as Administrator does **not** help — the policy
+applies to administrators too. Either use `npm.cmd`, or allow local scripts for
+the current user (no admin needed):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+Git Bash and `cmd.exe` are unaffected. On this machine every scope was
+`Undefined`, i.e. the Windows default — nothing had been locked down.
+
+**Node must be 22+.** The machine started on v20.16.0, which is below *every*
+floor in this project — including Vite's `^20.19.0`, by three patch versions.
+`npm run verify:db` also runs under the system Node and needs `node:sqlite`,
+which landed in 22.5. Now on v24.19.0 / npm 11.17.0, where all 544 assertions
+pass.
+
+**npm 11 gates install scripts.** It reports `allow-scripts` warnings for
+esbuild. Harmless here — esbuild's binary ships as the `@esbuild/win32-x64`
+platform package, so nothing needs the postinstall.
 
 ---
 
@@ -267,19 +432,21 @@ npm run test:e2e      # end-to-end, ~3 min
 npm run test:e2e -- backups   # one suite while debugging
 ```
 
-**`db/verify.ts` (76 assertions)** runs the real repositories against a temp
+**`db/verify.ts` (97 assertions)** runs the real repositories against a temp
 database under plain Node — possible only because `db/` imports nothing from
-Electron. It includes a **hand-built v1 to v2 migration test**; migrations are
-the one thing that cannot be fixed after release.
+Electron. It includes **hand-built v1→v2 and v2→v3 migration tests**; migrations
+are the one thing that cannot be fixed after release. Each builds its legacy
+database by hand rather than replaying the project's own migration list, which
+would only prove the list is self-consistent.
 
-**`tests/` (317 assertions across 11 suites)** drives a real Electron window over
+**`tests/` (447 assertions across 12 suites)** drives a real Electron window over
 the Chrome DevTools Protocol. Most of what matters here only exists across the
 process boundary — IPC validation, push events, file copies, window chrome — so
 mounting components in isolation would exercise none of it.
 
 | Suite | Covers |
 |---|---|
-| `games` / `games-ui` | CRUD, validation, cover pipeline, form UX |
+| `games` / `games-ui` | CRUD, validation, cover pipeline, form UX, cover viewer, no-cover states |
 | `ipc-validation` | Malformed input from the renderer |
 | `sessions` | Launch, exit detection, discard threshold, crash recovery |
 | `backups` | Copy, dedup, rotation, pinning, usage |
@@ -288,6 +455,7 @@ mounting components in isolation would exercise none of it.
 | `settings` | Validation, backups-root change, orphan cleanup |
 | `window-chrome` | Title bar, control hover states, fullscreen |
 | `sidebar-and-demo` | Sidebar collapse, sample-data seeder |
+| `metadata` | Three providers, credentials, search, apply, art upgrade, injection guards, the name combobox |
 
 `test:e2e` needs a current build — run `npm run build` first. Each suite gets a
 freshly launched app with its own user-data directory, so suites cannot
@@ -369,6 +537,14 @@ Others, in rough priority order:
   variables alone gives light-on-light text.
 - **A game launched outside LaunchPad is invisible** — the running-game checks
   rely on LaunchPad having spawned the process.
+- **Antivirus can block the spawn entirely.** Confirmed on the dev machine with
+  Hades II: `CreateProcess` on `Hades2.exe` returns `EACCES` from Node/Electron
+  while `Start-Process` (ShellExecute) launches it fine, and a byte-identical
+  copy under a different name spawns without complaint. ACLs, attributes,
+  manifest (`asInvoker`) and Mark-of-the-Web were all identical to a sibling exe
+  that works, and Defender logged cloud-protection activity at the moment of the
+  attempt. Nothing in LaunchPad can fix that — a Defender exclusion for the game
+  folder is the user's call. What LaunchPad *can* do, and now does, is say so.
 - **No router**, so no deep linking and the open game is not restored on restart.
 - **Window size, position, maximised and fullscreen state are not persisted**
   across restarts. `isMaximized` is already tracked and pushed, so persisting it
@@ -378,5 +554,36 @@ Others, in rough priority order:
   and drop the `ControlButton` block from `TitleBar.tsx`.
 - **The activity chart** is built from the fetched session list (capped at 100
   rows) and buckets by the session's *start* day.
+
+**Metadata, specifically:**
+
+- **It needs credentials the user registers themselves.** There is no shared key,
+  and there should not be: a key committed to a public repo is a key that gets
+  revoked.
+- **IGDB requires a Twitch account with SMS two-factor**, which fails outright in
+  some countries — Twitch's SMS delivery to Bangladesh, for one, returns
+  "We weren't able to register two-factor authentication for your phone number".
+  That is why RAWG (email only) and SteamGridDB (Steam login) exist as the
+  no-phone path, and why RAWG is not merely a fallback but a first-class source.
+- **RAWG's images are landscape screenshots**, which crop badly into the 3:4
+  grid. SteamGridDB is what makes RAWG's artwork usable; without it a
+  RAWG-sourced cover is a letterboxed screenshot.
+- **Genres are stored as a JSON array in one TEXT column**, not a join table.
+  Nothing queries by individual genre yet. Genre *filtering* in the library is
+  the migration that would justify a real table and an index — it was
+  deliberately left out of the first change.
+- **No bulk matching.** Each game is matched one at a time from its edit dialog.
+  A "match everything" action needs rate limiting, partial-failure reporting and
+  a review step before applying, which is a feature of its own.
+- **Nothing re-fetches.** `metadata_id` and `metadata_updated_at` are stored so
+  a refresh *can* re-query the same entry rather than re-searching by name, but
+  no code calls it yet. That was the point of storing the provenance.
+- **The summary is stored but not displayed anywhere.** It is written by
+  `apply` and shown only in the picker. Surfacing it on the detail page is a
+  UI change with no backend work left to do.
+- **Credentials are stored in plaintext** in the settings table. On a
+  single-user desktop app the database is already readable by anyone who can
+  read the user's profile, so encrypting it with a key stored beside it would
+  be theatre. Worth revisiting only if the app ever gains multi-user profiles.
 
 The per-feature sections in `docs/FEATURES.md` carry the full list.

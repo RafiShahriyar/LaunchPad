@@ -1,6 +1,16 @@
 import { app } from 'electron'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 
 /**
@@ -96,6 +106,127 @@ export function importCover(sourcePath: string, gameId: number): string {
   return targetPath
 }
 
+// --- Remote covers -----------------------------------------------------------
+
+/**
+ * Content types accepted from a remote cover, mapped to the extension written.
+ *
+ * The extension comes from the declared type rather than from the URL: a
+ * provider CDN commonly serves an image from a path with no extension at all,
+ * and trusting the URL would write a file Chromium then refuses to decode.
+ */
+const REMOTE_CONTENT_TYPES: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/bmp': '.bmp',
+  'image/avif': '.avif'
+}
+
+const REMOTE_FETCH_TIMEOUT_MS = 20_000
+
+/**
+ * Verifies the bytes actually start like the image type that was declared.
+ *
+ * A `Content-Type` header is a claim by the server, not evidence. This is a
+ * cheap structural check in the same spirit as the asset protocol's containment
+ * check: the file lands in a folder the renderer can load from, so it should
+ * be what it says it is before it gets there.
+ */
+function looksLikeImage(bytes: Uint8Array): boolean {
+  if (bytes.length < 12) return false
+  const startsWith = (...signature: number[]): boolean =>
+    signature.every((byte, index) => bytes[index] === byte)
+
+  if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return true // PNG
+  if (startsWith(0xff, 0xd8, 0xff)) return true // JPEG
+  if (startsWith(0x47, 0x49, 0x46, 0x38)) return true // GIF
+  if (startsWith(0x42, 0x4d)) return true // BMP
+
+  // RIFF....WEBP and ....ftyp (AVIF) both carry their tag at a fixed offset.
+  const tag = String.fromCharCode(...bytes.slice(8, 12))
+  if (startsWith(0x52, 0x49, 0x46, 0x46) && tag === 'WEBP') return true
+  if (tag === 'ftyp') return true
+
+  return false
+}
+
+/**
+ * Downloads a cover from a remote URL into the managed covers folder.
+ *
+ * Mirrors importCover's guarantees -- content-hashed filename, confined to the
+ * covers directory -- with two additions the local path does not need:
+ *
+ *   1. **Write to `.tmp-…` then rename.** The rename is the commit point, the
+ *      same rule the backup writer follows. A connection dropped mid-download
+ *      must never leave a truncated file sitting under a name the library will
+ *      later treat as valid artwork.
+ *   2. **The response is checked before it is trusted.** Declared type, actual
+ *      size and leading bytes are all verified, because unlike a file the user
+ *      picked, this one was chosen by a remote server.
+ */
+export async function importCoverFromUrl(url: string, gameId: number): Promise<string> {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error(`Cover URL is not a valid URL: ${url}`)
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Refusing to download a cover over ${parsed.protocol}`)
+  }
+
+  let response: Response
+  try {
+    response = await fetch(parsed, { signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS) })
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(`Could not download the cover image: ${reason}`)
+  }
+
+  if (!response.ok) {
+    throw new Error(`Cover image download failed with HTTP ${response.status}.`)
+  }
+
+  const contentType = (response.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
+  const ext = REMOTE_CONTENT_TYPES[contentType]
+  if (!ext) {
+    throw new Error(`Cover image has an unsupported content type: ${contentType || 'unknown'}`)
+  }
+
+  // Reject an oversized image from its declared length before downloading it.
+  const declaredLength = Number.parseInt(response.headers.get('content-length') ?? '', 10)
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_COVER_BYTES) {
+    const mb = (declaredLength / 1024 / 1024).toFixed(1)
+    throw new Error(`Cover image is ${mb} MB; the limit is 20 MB.`)
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  if (bytes.byteLength === 0) throw new Error('Cover image download returned no data.')
+  if (bytes.byteLength > MAX_COVER_BYTES) {
+    const mb = (bytes.byteLength / 1024 / 1024).toFixed(1)
+    throw new Error(`Cover image is ${mb} MB; the limit is 20 MB.`)
+  }
+  if (!looksLikeImage(bytes)) {
+    throw new Error(`Downloaded cover is not a recognisable ${contentType} image.`)
+  }
+
+  const hash = createHash('sha1').update(bytes).digest('hex').slice(0, 12)
+  const targetPath = join(getCoversDir(), `${gameId}-${hash}${ext}`)
+  if (existsSync(targetPath)) return targetPath
+
+  const tempPath = join(getCoversDir(), `.tmp-${gameId}-${hash}${ext}`)
+  writeFileSync(tempPath, bytes)
+  try {
+    renameSync(tempPath, targetPath)
+  } catch (err) {
+    rmSync(tempPath, { force: true })
+    throw err
+  }
+  return targetPath
+}
+
 /**
  * Removes every managed cover belonging to a game.
  *
@@ -106,9 +237,11 @@ export function importCover(sourcePath: string, gameId: number): string {
 export function deleteCoversForGame(gameId: number): void {
   const coversDir = getCoversDir()
   const prefix = `${gameId}-`
+  // Also sweeps `.tmp-<id>-…` left by a download interrupted before its rename.
+  const tempPrefix = `.tmp-${gameId}-`
   try {
     for (const entry of readdirSync(coversDir)) {
-      if (entry.startsWith(prefix)) {
+      if (entry.startsWith(prefix) || entry.startsWith(tempPrefix)) {
         try {
           rmSync(join(coversDir, entry), { force: true })
         } catch {

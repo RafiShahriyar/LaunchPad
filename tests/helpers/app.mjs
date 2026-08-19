@@ -34,8 +34,16 @@ export function killStrays() {
 }
 
 export class AppInstance {
-  constructor(profileDir) {
+  /**
+   * `env` is merged over the runner's own environment at spawn time.
+   *
+   * It exists so a suite can redirect an outbound integration at a local stub
+   * (see suites/metadata.mjs). Testing against the real service would be flaky,
+   * would need live credentials, and would spend a rate limit the user shares.
+   */
+  constructor(profileDir, env = {}) {
     this.profileDir = profileDir
+    this.env = env
     this.child = null
   }
 
@@ -51,7 +59,7 @@ export class AppInstance {
     this.child = spawn(
       ELECTRON,
       ['.', `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${this.profileDir}`],
-      { cwd: ROOT, stdio: 'ignore', detached: false }
+      { cwd: ROOT, stdio: 'ignore', detached: false, env: { ...process.env, ...this.env } }
     )
   }
 
@@ -95,12 +103,12 @@ export class AppInstance {
   }
 }
 
-export async function launchApp(profileDir) {
+export async function launchApp(profileDir, env = {}) {
   killStrays()
   rmSync(profileDir, { recursive: true, force: true })
   mkdirSync(profileDir, { recursive: true })
 
-  const app = new AppInstance(profileDir)
+  const app = new AppInstance(profileDir, env)
   app.start()
   await delay(1200)
   return app

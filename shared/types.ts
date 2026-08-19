@@ -23,6 +23,24 @@ export interface Game {
   saveFolderPath: string | null
   /** Absolute path to a cover image on disk, or null for the generated placeholder. */
   coverImagePath: string | null
+  /**
+   * Genres reported by the metadata provider.
+   *
+   * `null` and `[]` mean different things and the UI renders them differently:
+   * null is "never looked up", `[]` is "looked up, and the provider listed
+   * none". Collapsing them would make the app claim a game has no genres when
+   * it has simply never been asked about.
+   */
+  genres: string[] | null
+  /** Short description from the provider, or null if never looked up. */
+  summary: string | null
+  /** Provider release date as YYYY-MM-DD. Not a timestamp: the source has no time. */
+  releaseDate: string | null
+  /** Which provider supplied the fields above. Null when none has. */
+  metadataSource: MetadataSource | null
+  /** The provider's own id, so a refresh re-queries the same entry, not a new search. */
+  metadataId: string | null
+  metadataUpdatedAt: IsoTimestamp | null
   /** Denormalised roll-up of play_sessions, kept current so the grid doesn't N+1 query. */
   totalPlaytimeSeconds: number
   lastPlayedAt: IsoTimestamp | null
@@ -65,6 +83,26 @@ export interface SaveBackup {
 
 export type BackupTrigger = 'pre_launch' | 'post_session' | 'manual' | 'pre_restore'
 
+/**
+ * Providers of the text metadata: genres, summary and release date.
+ *
+ * A union rather than a bare string so that adding one forces every switch over
+ * it to be revisited at compile time.
+ */
+export type MetadataSource = 'igdb' | 'rawg'
+
+/**
+ * Providers of cover art only.
+ *
+ * Separate from MetadataSource because these supply no genres or descriptions —
+ * they exist to solve one problem, that the library grid draws portrait 3:4
+ * cards and most catalogue APIs return landscape screenshots.
+ */
+export type CoverArtSource = 'steamgriddb'
+
+/** Anything that needs credentials stored on this machine. */
+export type CredentialProvider = MetadataSource | CoverArtSource
+
 export interface AppSettings {
   /** Root folder that per-game backup folders live under. */
   backupsRootPath: string
@@ -94,6 +132,22 @@ export interface NewGame {
 
 /** Every field optional — only the keys present are written. */
 export type GameUpdate = Partial<NewGame>
+
+/**
+ * Provider-supplied fields, written as one unit by the metadata flow.
+ *
+ * Deliberately separate from NewGame/GameUpdate, which model what a *user*
+ * authors. Keeping them apart means the games:create and games:update handlers
+ * cannot be talked into writing a metadata provenance that never happened —
+ * the same reason the database owns id and the timestamps.
+ */
+export interface GameMetadataPatch {
+  genres: string[]
+  summary: string | null
+  releaseDate: string | null
+  metadataSource: MetadataSource
+  metadataId: string
+}
 
 export interface NewSaveBackup {
   gameId: number

@@ -70,6 +70,12 @@ One row per game in the library.
 | `launch_args` | TEXT NULL | Extra CLI args, stored as one string |
 | `save_folder_path` | TEXT NULL | **NULL disables backups for this game** |
 | `cover_image_path` | TEXT NULL | Absolute path on disk; NULL renders a placeholder |
+| `genres` | TEXT NULL | JSON array of strings (schema v3). **NULL and `[]` differ** — see below |
+| `summary` | TEXT NULL | Provider description (schema v3) |
+| `release_date` | TEXT NULL | `YYYY-MM-DD` (schema v3), not a timestamp |
+| `metadata_source` | TEXT NULL | Which provider supplied the text columns above: `igdb` or `rawg` |
+| `metadata_id` | TEXT NULL | The provider's own id for this game |
+| `metadata_updated_at` | TEXT NULL | ISO-8601; when the metadata was last fetched |
 | `total_playtime_seconds` | INTEGER NOT NULL DEFAULT 0 | Denormalised roll-up (see below) |
 | `last_played_at` | TEXT NULL | ISO-8601 |
 | `created_at` | TEXT NOT NULL | ISO-8601 |
@@ -83,6 +89,36 @@ for every game at once — the alternative is either an aggregate per card
 because exactly one code path writes it: the session-end transaction updates the
 session row and this column together, atomically. A `recalculatePlaytime()`
 repair function will be provided for the case where the two ever diverge.
+
+**Why `genres` distinguishes NULL from `[]` (added in schema v3).** NULL means
+the game has never been looked up. An empty JSON array means it *was* looked up
+and the provider listed no genres. Those are different claims, and the UI renders
+them differently, so collapsing them would make the app assert that a game has no
+genres when nobody ever asked. `mapGame()` also returns NULL for a column that
+will not parse as an array of strings: a corrupt value is not evidence for the
+positive claim that there are none.
+
+**Why `genres` is a JSON array in one column rather than a join table.** It is
+only ever read and written whole; nothing queries by individual genre. A
+`genres` table plus a `game_genres` join would add two tables and a migration to
+support a query the app does not make. Genre *filtering* in the library is the
+feature that would justify them, and it is deliberately not built yet — that is
+the migration to write when it is.
+
+**Why `release_date` is a date string, not a timestamp.** IGDB reports a release
+date. Widening it to an instant would invent a time of day and a timezone the
+source does not have, and the UI only ever shows the year.
+
+**Why the provenance columns exist.** `metadata_source` and `metadata_id` let a
+future refresh re-query the exact entry that was applied, instead of re-searching
+by name and possibly matching a different edition. `metadata_updated_at` says
+when the values were fetched. Nothing re-fetches yet — the columns are what make
+it possible without a second migration.
+
+**Why the IGDB credentials are NOT in this table's `settings` rows as a setting.**
+They are stored in the `settings` table but deliberately outside `AppSettings`,
+because `settings:get` returns that whole object to the renderer and a client
+secret there would sit in the Redux store. See `db/repositories/credentials.ts`.
 
 **Why `save_folder_path` is nullable rather than a separate table.** A game has
 at most one save location in this design. Games with saves split across several
@@ -190,6 +226,26 @@ typed shape lives in `AppSettings` in `shared/types.ts`.
 | `backup_after_session` | `true` | Snapshot automatically after each session |
 | `min_session_seconds` | `30` | Sessions shorter than this are discarded |
 | `theme` | `dark` | UI theme |
+| `sidebar_collapsed` | `false` | Sidebar collapsed to icons only |
+
+Further keys live in this table but are **not** part of `AppSettings` and are
+never returned to the renderer. They are named `cred_<provider>_<field>` —
+`cred_rawg_apiKey`, `cred_igdb_clientSecret`, `cred_steamgriddb_apiKey`, and so
+on — a derived scheme rather than an enumerated list, so adding a provider needs
+no change in the credentials repository at all.
+
+They are read and written only by `db/repositories/credentials.ts`, which exposes
+an identifier masked and secrets not at all. Two more per provider,
+`cred_<provider>_access_token` and `cred_<provider>_access_token_expires_at`,
+cache an OAuth token (only IGDB uses one). The token is cached here rather than
+in memory because IGDB tokens last around sixty days, so re-authenticating on
+every app start would be a wasted request against a rate-limited endpoint.
+
+Note the ordering rule: **writing credentials clears the cached token in the same
+transaction**, because a token minted by the old credentials cannot authenticate
+the new ones. That is why `verify()` returns a token instead of caching it —
+caching during verification wrote a token that the subsequent store immediately
+wiped.
 
 ## Relationships
 
@@ -308,11 +364,15 @@ while silently diverging their schema from a fresh install's.
 |---|---|---|
 | 1 | `initial_schema` | The four tables and three indexes above |
 | 2 | `backup_content_hash` | Adds `save_backups.content_hash` for backup deduplication |
+| 3 | `game_metadata` | Adds six nullable `games` columns for provider metadata and its provenance |
 
-`db/verify.ts` includes an upgrade test that builds a **v1 database by hand**
-and migrates it, asserting games, playtime, settings and backup rows all
-survive. Building v1 by hand rather than trusting the migration list is what
-makes it a genuine upgrade test rather than a fresh-install test -- and
+`db/verify.ts` includes upgrade tests that build a **v1 database and a v2
+database by hand** and migrate each, asserting games, playtime, settings, backup
+rows and content hashes all survive. The v2 test additionally asserts that a game
+predating the metadata feature reports `genres` as NULL rather than `[]` -- the
+migration must not turn "never looked up" into "has no genres". Building the old
+schema by hand rather than trusting the migration list is what makes these
+genuine upgrade tests rather than fresh-install tests -- and
 migrations are the one thing that cannot be fixed after release, because user
 data has already passed through them.
 

@@ -73,6 +73,16 @@ const api: RendererApi = {
     close: () => ipcRenderer.invoke(Channels.window.close),
     onStateChanged: (callback) => subscribe(Channels.window.stateChanged, callback)
   },
+  metadata: {
+    search: (query) => ipcRenderer.invoke(Channels.metadata.search, query),
+    apply: (gameId, result, options) =>
+      ipcRenderer.invoke(Channels.metadata.apply, gameId, result, options),
+    getStatus: () => ipcRenderer.invoke(Channels.metadata.getStatus),
+    setCredentials: (provider, values) =>
+      ipcRenderer.invoke(Channels.metadata.setCredentials, provider, values),
+    clearCredentials: (provider) =>
+      ipcRenderer.invoke(Channels.metadata.clearCredentials, provider)
+  },
   settings: {
     get: () => ipcRenderer.invoke(Channels.settings.get),
     update: (patch) => ipcRenderer.invoke(Channels.settings.update, patch),

@@ -34,6 +34,43 @@ export interface SessionEndPayload {
   exitReason: SessionExitReason
   exitCode: number | null
   discarded: boolean
+  /** Present only when the process never started. See SessionEndedEvent. */
+  launchError?: string | null
+}
+
+/**
+ * Turns a spawn failure into something a player can act on.
+ *
+ * Raw errno strings are useless to the person holding the mouse: "spawn EFTYPE"
+ * and "spawn EACCES" name a C error code, not a problem. `EACCES` is the worst
+ * offender because it does NOT mean "wrong file permissions" here — the
+ * observed cause is another copy of the game already running and holding the
+ * executable, with security software refusing the launch a close second.
+ *
+ * Used by BOTH failure paths, which is easy to get wrong: `spawn()` reports
+ * some failures by throwing synchronously (EFTYPE, seen with a non-program) and
+ * others through the child's asynchronous `error` event (EACCES, seen with a
+ * locked game). Describing only one leaves the other leaking an errno.
+ */
+function describeSpawnFailure(err: NodeJS.ErrnoException, executable: string): string {
+  if (err.code === 'ENOENT') {
+    return `Could not find ${executable}. The game may have been moved or uninstalled.`
+  }
+  if (err.code === 'EACCES' || err.code === 'EPERM') {
+    return (
+      `Windows refused to start ${executable}. ` +
+      'The usual cause is that the game is already running — check Task Manager ' +
+      'and close any leftover copy. Antivirus or security software blocking the ' +
+      'launch is the other likely reason.'
+    )
+  }
+  if (err.code === 'EFTYPE' || err.code === 'ENOEXEC') {
+    return (
+      `${executable} is not a program Windows can run. ` +
+      'Point this game at its .exe rather than a data or shortcut file.'
+    )
+  }
+  return `Could not start ${executable}: ${err.message}`
 }
 
 type SessionEndListener = (payload: SessionEndPayload) => void
@@ -216,8 +253,10 @@ export function launchGame(gameId: number): { sessionId: number; startedAt: stri
       windowsHide: false
     })
   } catch (err) {
+    // The synchronous path. Described here too, or a raw "spawn EFTYPE" is what
+    // the user reads in the banner.
     sessionsRepo.discardSession(session.id)
-    throw err
+    throw new Error(describeSpawnFailure(err as NodeJS.ErrnoException, target.command))
   }
 
   // Let LaunchPad exit without waiting on the child, while still receiving its
@@ -239,13 +278,20 @@ export function launchGame(gameId: number): { sessionId: number; startedAt: stri
     running.delete(gameId)
     sessionsRepo.discardSession(session.id)
     console.error(`[launcher] failed to start game ${gameId}:`, err)
+    /*
+     * The message MUST travel with the event. This handler runs after
+     * launchGame() has already returned successfully, so the IPC call the
+     * renderer awaited resolved as a success — this event is the only thing
+     * left that can tell the user the game never started.
+     */
     onSessionEnd({
       gameId,
       sessionId: session.id,
       durationSeconds: 0,
       exitReason: 'unknown',
       exitCode: null,
-      discarded: true
+      discarded: true,
+      launchError: describeSpawnFailure(err as NodeJS.ErrnoException, target.command)
     })
   })
 

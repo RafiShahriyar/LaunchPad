@@ -94,6 +94,36 @@ const MIGRATIONS: readonly Migration[] = [
       -- a null simply means "cannot prove it is unchanged", so a backup is taken.
       ALTER TABLE save_backups ADD COLUMN content_hash TEXT;
     `
+  },
+  {
+    version: 3,
+    name: 'game_metadata',
+    up: `
+      -- Metadata fetched from an external provider (currently IGDB). Every
+      -- column is nullable and NULL means "never looked up", which is not the
+      -- same as "looked up and the provider reported nothing" -- that case is
+      -- an empty JSON array in genres. The app must be able to tell those apart
+      -- so it never claims a game has no genres when it simply has not asked.
+      --
+      -- genres is a JSON array of strings rather than a join table: it is only
+      -- ever read and written whole, never queried by individual genre, and a
+      -- join table would add two tables and a migration for no query we make.
+      -- If genre filtering ever needs an index, that is the migration to write.
+      ALTER TABLE games ADD COLUMN genres TEXT;
+      ALTER TABLE games ADD COLUMN summary TEXT;
+
+      -- Provider release date as YYYY-MM-DD, not a timestamp: IGDB reports a
+      -- release date, and widening it to an instant would invent a precision
+      -- (and a timezone) the source does not have.
+      ALTER TABLE games ADD COLUMN release_date TEXT;
+
+      -- Which provider the values came from, and its id for that game, so a
+      -- later refresh can re-query the same entry instead of re-searching by
+      -- name and possibly matching a different edition.
+      ALTER TABLE games ADD COLUMN metadata_source TEXT;
+      ALTER TABLE games ADD COLUMN metadata_id TEXT;
+      ALTER TABLE games ADD COLUMN metadata_updated_at TEXT;
+    `
   }
 ]
 

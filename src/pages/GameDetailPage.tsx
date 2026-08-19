@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ActivityChart } from '@/components/ActivityChart'
+import { CoverViewer } from '@/components/CoverViewer'
 import { BackupList } from '@/components/BackupList'
 import { Button } from '@/components/Modal'
 import { PlayButton } from '@/components/PlayButton'
@@ -42,6 +43,16 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
     if (!stats) void dispatch(fetchSessionStats(gameId))
   }, [dispatch, gameId, stats])
 
+  /*
+   * Declared above the early return below, not beside the markup that uses it.
+   * Hooks must run in the same order on every render, and this component
+   * returns early when the game is gone — a useState after that point changes
+   * the hook count the moment a game is deleted while its detail view is open,
+   * which crashes the page instead of showing the library. The e2e suite caught
+   * exactly that.
+   */
+  const [viewingCover, setViewingCover] = useState(false)
+
   // The game can vanish while this view is open (deleted from another window).
   if (!game) {
     return (
@@ -69,10 +80,30 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
       <header className="flex flex-wrap items-start gap-6">
         <div className="h-44 w-32 shrink-0 overflow-hidden rounded-xl border border-surface-700 bg-surface-900">
           {cover ? (
-            <img src={cover} alt="" className="h-full w-full object-cover" />
+            // Cover art carries a title and often small print that is illegible
+            // at 128px, so it opens full size.
+            <button
+              type="button"
+              onClick={() => setViewingCover(true)}
+              aria-label="View cover image full size"
+              className="h-full w-full cursor-zoom-in"
+            >
+              <img src={cover} alt="" className="h-full w-full object-cover" />
+            </button>
           ) : (
-            <div className="grid h-full w-full place-items-center bg-gradient-to-br from-surface-800 to-surface-900 text-4xl font-bold text-surface-600">
-              {game.name.slice(0, 2).toUpperCase()}
+            <div
+              className="grid h-full w-full place-items-center bg-gradient-to-br from-surface-800 to-surface-900 text-center"
+              data-testid="no-cover"
+              title="No cover image"
+            >
+              <span>
+                <span className="block text-4xl font-bold text-surface-600">
+                  {game.name.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="mt-1 block text-[10px] uppercase tracking-wide text-surface-600">
+                  No cover
+                </span>
+              </span>
             </div>
           )}
         </div>
@@ -166,6 +197,10 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
           )}
         </section>
       </div>
+
+      {viewingCover && cover && (
+        <CoverViewer src={cover} title={game.name} onClose={() => setViewingCover(false)} />
+      )}
     </div>
   )
 }

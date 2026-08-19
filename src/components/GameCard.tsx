@@ -38,9 +38,23 @@ export function GameCard({ game }: { game: Game }) {
         {cover ? (
           <img src={cover} alt="" className="h-full w-full object-cover" loading="lazy" />
         ) : (
-          <div className="grid h-full w-full place-items-center bg-gradient-to-br from-surface-800 to-surface-900">
-            <span className="px-4 text-center text-3xl font-bold text-surface-600">
-              {game.name.slice(0, 2).toUpperCase()}
+          <div
+            className="grid h-full w-full place-items-center bg-gradient-to-br from-surface-800 to-surface-900"
+            data-testid="no-cover"
+            title="No cover image"
+          >
+            <span className="px-4 text-center">
+              <span className="block text-3xl font-bold text-surface-600">
+                {game.name.slice(0, 2).toUpperCase()}
+              </span>
+              {/*
+                The initials alone are ambiguous — they read equally as "this is
+                the artwork" and as "the artwork failed to load". Naming the
+                state removes the guess.
+              */}
+              <span className="mt-1 block text-[10px] uppercase tracking-wide text-surface-600">
+                No cover
+              </span>
             </span>
           </div>
         )}

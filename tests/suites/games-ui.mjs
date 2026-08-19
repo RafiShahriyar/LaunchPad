@@ -155,4 +155,86 @@ export async function run({ ev, send, reload, text, check, section, fixtures, de
   rendered = await text()
   check('game removed from the grid', !/Celeste/.test(rendered))
   check('back to the empty state', /library is empty/i.test(rendered))
+
+  /*
+   * Cover art at card size is 80-128px wide. Real box art carries a title and
+   * often small print that is simply unreadable at that scale, so it has to be
+   * openable. And a placeholder with no words is ambiguous — it reads equally
+   * as "this game has no art" and as "the art failed to load".
+   */
+  section('Missing artwork says so, present artwork can be opened')
+
+  const noArt = await ev(
+    `window.api.games.create({name:'Artless', executablePath:'${exe}'})`
+  )
+  check('a game with no cover was created', noArt?.ok === true, noArt)
+  await reload()
+  await setup()
+  await delay(600)
+
+  check(
+    'the card names the empty state rather than only drawing a glyph',
+    (await ev('!!document.querySelector("[data-testid=no-cover]")')) === true
+  )
+  check('and says it in words', /No cover/i.test(await text()))
+
+  await ev(`window.__pageBtn('Artless') ? null : null`)
+  // Open the edit dialog through the card's own control.
+  await ev(`document.querySelector('[aria-label^="Edit game"]')?.click()`)
+  await delay(500)
+  const artlessDialog = await ev("window.__dlg()?.innerText || ''")
+  check(
+    'the form spells out that there is no cover',
+    /No cover image/i.test(artlessDialog),
+    artlessDialog.slice(0, 400)
+  )
+  check(
+    'and offers no "view" action for artwork that does not exist',
+    (await ev(`!window.__dlgBtn('View full size')`)) === true
+  )
+  await ev("window.__dlgBtn('Cancel').click()")
+  await delay(400)
+
+  section('A cover can be opened full size, and closing it keeps the form')
+
+  const withArt = await ev(
+    `window.api.games.update(${noArt?.data?.id}, { coverImagePath: '${fixtures.posix(fixtures.coverPng)}' })`
+  )
+  check('a cover was attached', withArt?.ok === true, withArt)
+  await reload()
+  await setup()
+  await delay(600)
+
+  check(
+    'the card no longer reports a missing cover',
+    (await ev('!!document.querySelector("[data-testid=no-cover]")')) === false
+  )
+
+  await ev(`document.querySelector('[aria-label^="Edit game"]')?.click()`)
+  await delay(500)
+  check('the form offers to view it', (await ev(`!!window.__dlgBtn('View full size')`)) === true)
+
+  await ev("window.__dlgBtn('View full size').click()")
+  await delay(400)
+  check(
+    'the viewer opened',
+    (await ev(`!!document.querySelector('[aria-label^="Cover image for"]')`)) === true
+  )
+  check(
+    'it renders the image at full size, not cropped to a card',
+    (await ev(`!!document.querySelector('[aria-label^="Cover image for"] img')`)) === true
+  )
+
+  // The viewer sits above the form and both listen for Escape on document. One
+  // keypress must dismiss only the viewer, or the user loses everything typed.
+  await ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  await delay(400)
+  check(
+    'Escape closed the viewer',
+    (await ev(`!document.querySelector('[aria-label^="Cover image for"]')`)) === true
+  )
+  check('the form underneath survived', (await ev('!!window.__dlg()')) === true)
+
+  await ev("window.__dlgBtn('Cancel').click()")
+  await delay(300)
 }

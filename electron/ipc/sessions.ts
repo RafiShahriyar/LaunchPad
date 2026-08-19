@@ -29,7 +29,8 @@ export function registerSessionHandlers(): void {
       game,
       discarded: payload.discarded,
       exitReason: payload.exitReason,
-      exitCode: payload.exitCode
+      exitCode: payload.exitCode,
+      launchError: payload.launchError ?? null
     }
     broadcast(Channels.sessions.ended, event)
 
