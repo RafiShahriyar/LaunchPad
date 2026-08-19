@@ -6,8 +6,9 @@ SQLite via `node:sqlite`.
 
 All 8 planned features are built, plus custom window chrome (dark title bar,
 self-drawn window controls, fullscreen), a collapsible sidebar, and a dev-only
-sample-data seeder. **385 assertions pass** across the data-layer, IPC and UI
-suites.
+sample-data seeder. **393 assertions pass** — 76 in the data-layer suite and 317
+end-to-end against a live Electron window. Both are committed and runnable with
+`npm test`.
 
 Repository: <https://github.com/RafiShahriyar/LaunchPad>
 
@@ -27,11 +28,12 @@ npm run build      # typecheck both projects, then build all three targets to ou
 npm start          # run the production build unpackaged
 npm run typecheck  # both tsconfig projects
 npm run verify:db  # 76-assertion data-layer suite (plain Node, ~1s)
+npm run test:e2e   # 317 assertions against a real Electron window (~3 min)
+npm test           # both
 npm run dist       # build + electron-builder → Windows (see Packaging below)
 ```
 
-`npm run verify:db` is the only test suite committed to the repo. See
-**Testing** below — this matters.
+Full setup instructions for a fresh clone are in `README.md`.
 
 ---
 
@@ -183,9 +185,14 @@ and is worth preserving:
 
 ---
 
-## Environment blockers (this machine)
+## Environment blockers (machine-specific — re-test after a move)
 
-**`npm run dist` cannot produce an installer here.** The app itself packages
+**Everything in this section was diagnosed on one specific Windows machine and
+may not apply elsewhere.** Both blockers below are caused by that machine's
+security policy, not by anything in this project. On a different PC, re-test
+before assuming either still holds — the fixes are cheap to undo.
+
+**`npm run dist` could not produce an installer there.** The app itself packages
 fine and the resulting `.exe` was verified working, but:
 
 1. **electron-builder 26 cannot run at all.** Its dependency collector invokes
@@ -213,6 +220,29 @@ LaunchPad has **zero production dependencies** — Vite bundles everything into
 `out/` — so the dependency-collection step that fails is pure overhead here.
 `"npmRebuild": false` is set for the same reason (no native modules).
 
+### Re-testing on a new machine
+
+```bash
+npm install
+npm run build && npm test      # should pass everywhere
+npm run dist                   # the machine-specific part
+```
+
+If `npm run dist` completes and produces an installer, both blockers are gone.
+In that case, try moving back to the current electron-builder:
+
+```bash
+npm install --save-dev electron-builder@latest
+npm run dist
+```
+
+If that also works, delete the pin note above. If it fails with
+`No JSON content found in output`, the PowerShell/batch execution policy is the
+same as on the original machine — stay on 25.x.
+
+The symlink error (`A required privilege is not held by the client`) is fixed by
+enabling **Windows Developer Mode**, and is unrelated to the version pin.
+
 ---
 
 ## Before shipping
@@ -228,58 +258,61 @@ LaunchPad has **zero production dependencies** — Vite bundles everything into
 
 ## Testing
 
-**`npm run verify:db` (76 assertions) is the only suite in the repo.** It runs
-the real repositories against a temp database under plain Node, including a
-**hand-built v1 → v2 migration test** — migrations are the one thing that cannot
-be fixed after release.
+```bash
+npm test              # both suites
+npm run verify:db     # data layer, plain Node, ~1s
+npm run test:e2e      # end-to-end, ~3 min
+npm run test:e2e -- backups   # one suite while debugging
+```
 
-**The other 309 are not committed.** They were driven through the Chrome
-DevTools Protocol against a real Electron instance, and those harnesses lived in
-a session scratchpad that is temporary. The regularly re-run sweep totals **385**:
+**`db/verify.ts` (76 assertions)** runs the real repositories against a temp
+database under plain Node — possible only because `db/` imports nothing from
+Electron. It includes a **hand-built v1 to v2 migration test**; migrations are
+the one thing that cannot be fixed after release.
 
-| Suite | Assertions | Covers |
-|---|---|---|
-| verify:db | 76 | Data layer + v1→v2 migration (the only one in the repo) |
-| step3 / step3ui | 26 / 28 | Games CRUD, validation, cover pipeline, form UX |
-| idcheck | 8 | Malformed IPC input |
-| step5 | 42 | Backup copy, dedup, rotation, pinning |
-| step6 / step6ui | 32 / 20 | Restore, undo snapshot, refusals |
-| step7 | 30 | Detail view, stats, activity chart, live updates |
-| step8 / step8ui | 42 / 19 | Settings validation, root change, orphan cleanup |
-| step9 | 22 | Title bar geometry, fullscreen via button/F11/Escape |
-| step10 | 40 | Window-control hover states, sidebar collapse, sample data |
+**`tests/` (317 assertions across 11 suites)** drives a real Electron window over
+the Chrome DevTools Protocol. Most of what matters here only exists across the
+process boundary — IPC validation, push events, file copies, window chrome — so
+mounting components in isolation would exercise none of it.
 
-A further **63** exist for step 4 (`step4` 39, `step4b` 7, `step4quit` 6,
-`step4ui` 11 — launch, exit detection, crash recovery, graceful quit). They are
-**not** in the sweep above because they require force-killing and restarting the
-app mid-suite, so they were run on their own.
+| Suite | Covers |
+|---|---|
+| `games` / `games-ui` | CRUD, validation, cover pipeline, form UX |
+| `ipc-validation` | Malformed input from the renderer |
+| `sessions` | Launch, exit detection, discard threshold, crash recovery |
+| `backups` | Copy, dedup, rotation, pinning, usage |
+| `restore` / `restore-ui` | Replacement semantics, undo snapshot, refusals |
+| `detail-view` | Stats, activity chart, live updates |
+| `settings` | Validation, backups-root change, orphan cleanup |
+| `window-chrome` | Title bar, control hover states, fullscreen |
+| `sidebar-and-demo` | Sidebar collapse, sample-data seeder |
 
-**Recommendation: rewrite these into the repo** (e.g. `tests/` with a runner
-script). The pattern is straightforward — launch `electron.exe` with
-`--remote-debugging-port`, connect over WebSocket, drive `Runtime.evaluate`.
+`test:e2e` needs a current build — run `npm run build` first. Each suite gets a
+freshly launched app with its own user-data directory, so suites cannot
+contaminate each other and any one can be run alone.
 
-Two lessons if you write more of them:
-- `innerText` applies `text-transform`, so a `uppercase` label reads as
-  `SESSIONS`. Use case-insensitive matching.
-- `.blur()` only fires React's `onBlur` if the element was actually focused
-  first. Same for scoping selectors inside `[role=dialog]` — the page has
-  same-named buttons.
-- A test finding an element by `aria-label` proves it exists, **not** that a
-  person can see it. The sidebar collapse control passed its test while being
-  reported as missing, because it was `slate-600` at the bottom of the rail.
-  For anything visual, look at a screenshot too.
-
-**Verifying UI changes.** `Page.captureScreenshot` over CDP works and is the
-fastest way to actually look at the app. OS-level screen capture does **not**
-work on this machine (the window is not composited into the captured desktop,
-and `Add-Type` is blocked by the same policy that breaks electron-builder 26),
-so anything drawn by the OS rather than the page cannot be inspected here. That
-is precisely why the window controls were moved into the page.
-
-**Watch for stale builds.** `release/<version>/win-unpacked/LaunchPad.exe` does
-not rebuild unless `npm run dist` is re-run. Running a stale `.exe` while
-developing has already caused one "the feature is missing" report — the feature
-was present in `out/`, just not in the packaged app.
+Lessons worth keeping if you add more:
+- `innerText` applies `text-transform`, so an `uppercase` label reads as
+  `SESSIONS`. Match case-insensitively.
+- `.blur()` only fires React's `onBlur` if the element was focused first, and
+  setting `.value` directly is ignored — go through the native setter and
+  dispatch `input`, as `helpers/cdp.mjs` does.
+- Scope selectors to `[role=dialog]`: the page has same-named buttons, and the
+  library search box is the first `<input>` in the document.
+- `nativeVirtualKeyCode` is required for keys handled by main's
+  `before-input-event` (F11). Renderer-handled keys work without it.
+- **A test finding an element by `aria-label` proves it exists, not that anyone
+  can see it.** The sidebar collapse control passed its test while being
+  reported as missing. For visual work, look at a screenshot too.
+- `Page.captureScreenshot` over CDP works and is the fastest way to actually look
+  at the app. OS-level screen capture does **not** work on the original dev
+  machine, so anything drawn by the OS rather than the page cannot be inspected
+  there — which is why the window controls were moved into the page.
+- Creating a game over IPC does not put it in the Redux store. Reload before
+  asserting on the grid.
+- `release/<version>/win-unpacked/LaunchPad.exe` does not rebuild unless
+  `npm run dist` is re-run. Running a stale `.exe` has already caused one
+  "the feature is missing" report.
 
 ---
 
