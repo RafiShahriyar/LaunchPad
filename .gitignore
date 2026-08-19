@@ -1,0 +1,23 @@
+node_modules/
+out/
+release/
+dist/
+.vite/
+
+# Local runtime data (SQLite db + save backups live in userData, but a dev
+# override may drop them here)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/data/
+
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.env
+.env.local
+.idea/
+.vscode/*
+!.vscode/extensions.json

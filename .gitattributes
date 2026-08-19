@@ -1,0 +1,10 @@
+# Normalise line endings in the repository. Without this, a Windows checkout
+# commits CRLF and a macOS/Linux one commits LF, so every file shows as fully
+# rewritten when the project moves between them.
+* text=auto eol=lf
+
+# Binary assets must never be transformed.
+*.png binary
+*.ico binary
+*.icns binary
+*.asar binary

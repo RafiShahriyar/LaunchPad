@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LaunchPad</title>
+    <!--
+      No Content-Security-Policy here on purpose. Vite's dev server injects an
+      inline react-refresh preamble, which a strict `script-src 'self'` would
+      block. The production CSP is injected at build time by the injectCsp()
+      plugin in electron.vite.config.ts, so the shipped app is locked down
+      without crippling hot reload.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

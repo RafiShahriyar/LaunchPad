@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "paths": {
+      "@db/*": ["./db/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": ["electron/**/*.ts", "db/**/*.ts", "shared/**/*.ts", "electron.vite.config.ts"]
+}
