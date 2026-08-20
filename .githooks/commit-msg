@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Keeps AI co-author trailers out of this repository's history.
+#
+# Why a hook and not just a note in CLAUDE.md: GitHub reads `Co-authored-by:`
+# trailers and credits the named account in the repository's contributor list.
+# A trailer added by habit therefore changes who GitHub says wrote this project,
+# and the only way to undo it after the fact is rewriting history and
+# force-pushing. A written rule does not prevent that; this does.
+#
+# Behaviour: matching trailers are STRIPPED and the removal is reported, rather
+# than the commit being rejected. Rejecting would mean retyping a long message
+# over a line that can simply be deleted.
+#
+# Human co-authors are untouched — pair programming is a real thing worth
+# crediting. Only trailers naming an AI assistant or its noreply address match.
+#
+# Enable once per clone (hooks are not copied by `git clone`):
+#
+#     git config core.hooksPath .githooks
+#
+# Verify with: git config --get core.hooksPath
+
+set -e
+
+MSG_FILE="$1"
+[ -f "$MSG_FILE" ] || exit 0
+
+PATTERN='^[[:space:]]*Co-[Aa]uthored-[Bb]y:.*\(claude\|anthropic\|copilot\|chatgpt\|openai\|gemini\|cursor\)'
+
+if grep -qi "$PATTERN" "$MSG_FILE"; then
+    REMOVED=$(grep -ci "$PATTERN" "$MSG_FILE" || true)
+
+    # Drop the trailers, then drop any blank lines they left at the end, so the
+    # message does not gain trailing whitespace every time this runs.
+    grep -vi "$PATTERN" "$MSG_FILE" > "$MSG_FILE.tmp"
+    sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$MSG_FILE.tmp" > "$MSG_FILE"
+    rm -f "$MSG_FILE.tmp"
+
+    echo "commit-msg: removed $REMOVED AI co-author trailer(s)." >&2
+    echo "            See CLAUDE.md, \"Commit authorship\", for why." >&2
+fi
+
+# The commit's own author is a separate route to the same outcome.
+AUTHOR_IDENT=$(git var GIT_AUTHOR_IDENT 2>/dev/null || echo '')
+case "$AUTHOR_IDENT" in
+    *[Cc]laude* | *anthropic* | *noreply@anthropic.com*)
+        echo "commit-msg: refusing to commit with author '$AUTHOR_IDENT'." >&2
+        echo "            Set user.name / user.email to a human before committing." >&2
+        exit 1
+        ;;
+esac
+
+exit 0

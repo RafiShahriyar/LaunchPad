@@ -194,6 +194,20 @@ game's folder is the fix, and it is your call to make.
 
 `docs/FEATURES.md` carries the full list.
 
+## Contributing
+
+Enable the repository's hooks once per clone — `git clone` does not copy them:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+That installs a `commit-msg` hook which keeps AI co-author trailers out of the
+history. GitHub credits any account named in a `Co-authored-by:` trailer in the
+repository's contributor list, and removing one after the fact means rewriting
+published history. See **Commit authorship** in [CLAUDE.md](CLAUDE.md) for the
+full reasoning.
+
 ## Licence
 
 MIT

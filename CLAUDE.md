@@ -21,6 +21,66 @@ that convention has held for the whole project.
 
 ---
 
+## Commit authorship — do not credit AI as a contributor
+
+**No commit in this repository may carry an AI co-author trailer.** No
+`Co-authored-by:` line naming Claude, Copilot, ChatGPT, Gemini or similar, and
+no commit authored as one.
+
+This is not a style preference. GitHub parses `Co-authored-by:` trailers and
+credits the named account in the repository's **contributor list** — so a
+trailer added out of habit changes who GitHub says wrote this project. Undoing it
+after the fact means rewriting history and force-pushing, which invalidates every
+existing clone, link and PR reference.
+
+It has already cost that once: the first two commits carried
+`Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`, both had to be rebuilt
+with `commit-tree` and force-pushed, and the trailer then came back on the
+themes commit and had to be amended out again.
+
+**Enforced by a hook, not by memory.** `.githooks/commit-msg` strips matching
+trailers and reports what it removed, and refuses outright if the commit's own
+author looks like an AI. Hooks are not copied by `git clone`, so enable it once
+per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Check it is on with `git config --get core.hooksPath` — it should print
+`.githooks`. Human co-authors are deliberately left alone; pair programming is
+worth crediting.
+
+**Auditing history:**
+
+```bash
+git log --format='%h %s | %(trailers:only)' --all
+```
+
+Any output with a trailer on it is a commit to fix. `%an`/`%ae` should be a
+person on every line.
+
+**If one does slip through**, fix it before merging rather than after — an amend
+on an unmerged branch costs nothing, whereas the same fix on `main` is a forced
+rewrite of published history.
+
+### The GitHub contributor cache is separate, and slower
+
+Removing the trailers fixes the data; the sidebar on the repository page is a
+**cached view** and lags well behind. Two sources disagree during that window:
+
+| Source | Reflects |
+|---|---|
+| `GET /repos/:owner/:repo/contributors` | Current history — updates promptly |
+| The repo page's Contributors box (`/_sidebar`) | A precomputed cache — can lag a day or more |
+
+At the time of writing the REST API reports one contributor while the sidebar
+still lists `claude`. That is expected and is not a sign the rewrite failed.
+Pushing a new commit does **not** reliably flush it. If it persists, a GitHub
+Support request to purge the contributors cache is the only remaining lever.
+
+---
+
 ## Commands
 
 ```bash
