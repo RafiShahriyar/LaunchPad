@@ -8,7 +8,7 @@ All 8 planned features are built, plus custom window chrome (dark title bar,
 self-drawn window controls, fullscreen), a collapsible sidebar, game-metadata
 lookup (cover art, genres, summaries) from IGDB or RAWG with optional
 SteamGridDB artwork, four colour themes, and a dev-only sample-data seeder.
-**608 assertions pass** — 106 in the data-layer suite and 502 end-to-end against a
+**626 assertions pass** — 106 in the data-layer suite and 520 end-to-end against a
 live Electron window. Both are committed and runnable with `npm test`.
 
 Repository: <https://github.com/RafiShahriyar/LaunchPad>
@@ -89,7 +89,7 @@ npm run build      # typecheck both projects, then build all three targets to ou
 npm start          # run the production build unpackaged
 npm run typecheck  # both tsconfig projects
 npm run verify:db  # 106-assertion data-layer suite (plain Node, ~1s)
-npm run test:e2e   # 502 assertions against a real Electron window (~3 min)
+npm run test:e2e   # 520 assertions against a real Electron window (~3 min)
 npm test           # both
 npm run dist       # build + electron-builder → Windows (see Packaging below)
 ```
@@ -318,6 +318,38 @@ the game is gone, so a `useState` declared next to the markup that uses it
 changes the hook count the moment a game is deleted while its detail view is
 open — React then throws instead of showing the library. That was a real
 regression, caught by `detail-view`.
+
+**Scrim opacity is coupled to whether the backdrop is blurred.** The detail
+header's gradients were originally tuned over a *blurred* cover, where crushing
+the image cost nothing because there was nothing to see. Removing the blur made
+those same values flatten real key art to near-black — the header looked broken
+while every assertion still passed, because a testid proves the image is in the
+DOM, not that anyone can make it out. **If you touch the blur, re-tune the
+scrims, and look at a screenshot.**
+
+**The detail header has no info panel.** A translucent six-row panel used to sit
+on the right; four of its rows duplicated tiles in the stat grid immediately
+below, and it covered the artwork the header exists to show. Genres are now pills
+under the play controls, and the panel's one unique row (Backups) became a sixth
+stat tile. `formatGenres()` still distinguishes null from `[]` — the pills are
+skipped entirely for those cases so the wording survives.
+
+**Values in a `Stat` tile are `truncate`d.** "Off for this game" rendered as
+"Off for this g…", so it says "Off". A clipped value is worse than a terse one
+when the label above it already carries the noun.
+
+**Buttons get their pointer cursor from one rule in `index.css`.** Tailwind v4's
+Preflight leaves buttons at the browser default of `cursor: default`, so every
+control in the app looked inert. Set globally rather than per-component, with
+`:disabled` excluded — a pointer on a dead control is a lie about what a click
+will do.
+
+**Long provider summaries are clamped, not truncated in the data.** `Synopsis`
+clamps to three lines and offers "Read more" only when the text actually exceeds
+`SYNOPSIS_CLAMP_CHARS`, so the toggle never invites a click that changes nothing.
+The threshold is a character count rather than a measured element: measuring
+means a layout read every render plus a resize listener, for a decision that only
+needs to be roughly right.
 
 **Missing artwork is stated, never implied.** A bare placeholder reads equally as
 "this game has no art" and "the art failed to load". Cards, the detail header and
@@ -560,7 +592,7 @@ are the one thing that cannot be fixed after release. Each builds its legacy
 database by hand rather than replaying the project's own migration list, which
 would only prove the list is self-consistent.
 
-**`tests/` (502 assertions across 13 suites)** drives a real Electron window over
+**`tests/` (520 assertions across 13 suites)** drives a real Electron window over
 the Chrome DevTools Protocol. Most of what matters here only exists across the
 process boundary — IPC validation, push events, file copies, window chrome — so
 mounting components in isolation would exercise none of it.

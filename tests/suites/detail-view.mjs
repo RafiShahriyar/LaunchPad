@@ -200,6 +200,156 @@ export async function run({ ev, reload, text, check, section, fixtures, app, del
   await delay(1200)
   await ev("[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Delete').click()")
   await delay(800)
+  /*
+   * Header presentation. These guard decisions that are easy to undo by accident
+   * while editing layout, and each one was a deliberate choice rather than a
+   * default.
+   */
+  section('Header presentation')
+
+  const artless = await ev(
+    `window.api.games.create({name:'Presentable', executablePath:'${exe}'})`
+  )
+  const pid = artless?.data?.id
+
+  // Genres and a summary long enough to need clamping.
+  const longSummary =
+    'A very long provider synopsis. '.repeat(20) + 'Final sentence that only appears when expanded.'
+  await ev(
+    `window.api.metadata.apply(${pid}, {id:'y',source:'rawg',name:'Presentable',genres:['Action','Roguelike','Indie'],releaseDate:'2024-05-06',summary:${JSON.stringify(longSummary)},coverUrl:null,heroUrl:null}, {applyName:false,applyCover:false})`
+  )
+  await ev(
+    `window.api.games.update(${pid}, { coverImagePath: '${fixtures.posix(fixtures.coverPng)}' })`
+  )
+  await reload()
+  await delay(900)
+  await ev(`document.querySelector('[aria-label="Open Presentable"]').click()`)
+  await delay(1200)
+
+  // The cover standing in for missing wide art must NOT be blurred: the blur hid
+  // the only artwork the game had.
+  check(
+    'the fallback backdrop is in use',
+    (await ev(`!!document.querySelector('[data-testid=hero-fallback]')`)) === true
+  )
+  const backdropFilter = await ev(
+    `getComputedStyle(document.querySelector('[data-testid=hero-fallback]')).filter`
+  )
+  check('and it is not blurred', backdropFilter === 'none', backdropFilter)
+
+  // Bigger than the 520px ceiling the header used to have.
+  const heroHeight = await ev(
+    `Math.round(document.querySelector('[data-testid=hero-fallback]').closest('section').getBoundingClientRect().height)`
+  )
+  check('the header is given real height', heroHeight >= 440, heroHeight)
+
+  section('Genres read as pills, not as one row of a stats panel')
+
+  const pillCount = await ev(
+    `[...document.querySelectorAll('span')].filter(el => ['Action','Roguelike','Indie'].includes(el.textContent.trim()) && el.className.includes('rounded-full')).length`
+  )
+  check('each genre gets its own pill', pillCount === 3, pillCount)
+
+  // The panel that used to duplicate four of the stat tiles is gone.
+  rendered = await text()
+  check(
+    'playtime is not stated twice in the header and the grid',
+    (rendered.match(/total playtime/gi) ?? []).length === 1,
+    (rendered.match(/total playtime/gi) ?? []).length
+  )
+
+  section('The synopsis is clamped, with a working toggle')
+
+  check('the synopsis renders', (await ev(`!!document.querySelector('[data-testid=synopsis]')`)) === true)
+  check(
+    'a long synopsis is clamped rather than pushing the page down',
+    (await ev(
+      `getComputedStyle(document.querySelector('[data-testid=synopsis]')).webkitLineClamp`
+    )) === '3'
+  )
+
+  const clampedHeight = await ev(
+    `Math.round(document.querySelector('[data-testid=synopsis]').getBoundingClientRect().height)`
+  )
+
+  check('a toggle is offered', (await ev(`!!document.querySelector('[data-testid=synopsis-toggle]')`)) === true)
+  check(
+    'it starts collapsed',
+    (await ev(`document.querySelector('[data-testid=synopsis-toggle]').getAttribute('aria-expanded')`)) === 'false'
+  )
+  check(
+    'and reads "Read more"',
+    /read more/i.test(await ev(`document.querySelector('[data-testid=synopsis-toggle]').innerText`))
+  )
+
+  await ev(`document.querySelector('[data-testid=synopsis-toggle]').click()`)
+  await delay(300)
+  const expandedHeight = await ev(
+    `Math.round(document.querySelector('[data-testid=synopsis]').getBoundingClientRect().height)`
+  )
+  check('expanding actually reveals more text', expandedHeight > clampedHeight, `${clampedHeight} -> ${expandedHeight}`)
+  check(
+    'the end of the summary is now reachable',
+    /only appears when expanded/.test(await text())
+  )
+  check(
+    'and the toggle offers the way back',
+    /show less/i.test(await ev(`document.querySelector('[data-testid=synopsis-toggle]').innerText`))
+  )
+
+  await ev(`document.querySelector('[data-testid=synopsis-toggle]').click()`)
+  await delay(300)
+  check(
+    'collapsing restores the clamp',
+    (await ev(
+      `Math.round(document.querySelector('[data-testid=synopsis]').getBoundingClientRect().height)`
+    )) === clampedHeight
+  )
+
+  section('A short synopsis is not given a pointless toggle')
+
+  const shortId = (
+    await ev(`window.api.games.create({name:'Terse', executablePath:'${exe}'})`)
+  )?.data?.id
+  await ev(
+    `window.api.metadata.apply(${shortId}, {id:'z',source:'rawg',name:'Terse',genres:[],releaseDate:null,summary:'Two words.',coverUrl:null,heroUrl:null}, {applyName:false,applyCover:false})`
+  )
+  await reload()
+  await delay(900)
+  await ev(`document.querySelector('[aria-label="Open Terse"]').click()`)
+  await delay(1200)
+  check('the short synopsis renders', (await ev(`!!document.querySelector('[data-testid=synopsis]')`)) === true)
+  check(
+    'but offers no toggle, since there is nothing more to show',
+    (await ev(`!document.querySelector('[data-testid=synopsis-toggle]')`)) === true
+  )
+
+  section('Buttons look clickable')
+
+  // Tailwind v4's Preflight leaves buttons at the browser default of
+  // `cursor: default`, which made every control in the app look inert.
+  const playCursor = await ev(
+    `getComputedStyle([...document.querySelectorAll('button')].find(b => /Play/.test(b.innerText))).cursor`
+  )
+  check('an enabled button shows a pointer', playCursor === 'pointer', playCursor)
+
+  const disabledCursor = await ev(`
+    (() => {
+      const b = [...document.querySelectorAll('button')].find(x => x.disabled)
+      return b ? getComputedStyle(b).cursor : 'none-found'
+    })()
+  `)
+  check(
+    'a disabled one does not promise anything',
+    disabledCursor === 'not-allowed' || disabledCursor === 'none-found',
+    disabledCursor
+  )
+
+  // Back to the library: the section below opens a card by name and would
+  // otherwise be clicking on a detail page that has no cards on it.
+  await ev(`[...document.querySelectorAll('button')].find(b => /Library/.test(b.innerText))?.click()`)
+  await delay(800)
+
   await ev(
     "[...document.querySelector('[role=dialog]').querySelectorAll('button')].find(b => b.innerText.trim() === 'Delete game').click()"
   )

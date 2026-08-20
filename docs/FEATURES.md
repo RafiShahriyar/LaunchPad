@@ -1153,6 +1153,29 @@ Both compiled cleanly and would have shipped:
    plus `Object.keys()`, which makes a missing member a compile error — the
    outcome the union was supposed to guarantee in the first place.
 
+### Header presentation
+
+The header is `clamp(420px, 58vh, 600px)` and shows its backdrop **unblurred**,
+including when the cover is standing in for missing wide art. The blur it used to
+carry hid the only artwork the game had; `object-cover` centre-crops instead,
+which reads as a zoom rather than a claim, and the fallback stays distinguishable
+in the DOM for the tests that guard it. Removing the blur required re-tuning all
+the scrims — values tuned over a blur crushed real key art to near-black, and
+every assertion still passed while it did, because a testid proves an image is
+present, not that it is visible.
+
+Genres are **pills under the play controls**. They were previously one row of a
+translucent six-row panel on the right, which duplicated four tiles of the stat
+grid immediately below it and covered the artwork the header exists to show. The
+panel is gone; its one unique row (Backups) became a sixth stat tile, so nothing
+was lost. The null-versus-empty wording survives — pills are skipped for both
+cases and `formatGenres()` renders "Not looked up" or "None listed" instead.
+
+Provider summaries run long enough to push the stats and the activity chart off
+the first screen, so the synopsis clamps to three lines behind a **Read more**
+toggle. The toggle appears only when the text actually exceeds the threshold,
+so it never offers a click that changes nothing.
+
 ### Viewing artwork, and admitting when there is none
 
 Cover art is drawn at 80-128px. Real box art carries a title and small print that

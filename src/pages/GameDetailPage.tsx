@@ -106,34 +106,6 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
             </Button>
           </>
         }
-        info={
-          <>
-            <InfoRow icon={<CalendarIcon />} label="Released" value={formatReleaseDate(game)} />
-            <InfoRow icon={<TagIcon />} label="Genres" value={formatGenres(game)} />
-            <InfoRow
-              icon={<ClockIcon />}
-              label="Playtime"
-              value={formatPlaytime(game.totalPlaytimeSeconds)}
-            />
-            <InfoRow
-              icon={<PlayIcon />}
-              label="Sessions"
-              value={stats ? String(stats.sessionCount) : '—'}
-            />
-            <InfoRow icon={<SaveIcon />} label="Last played" value={formatDateTime(game.lastPlayedAt)} />
-            <InfoRow
-              icon={<ArchiveIcon />}
-              label="Backups"
-              value={
-                game.saveFolderPath
-                  ? backups.length > 0
-                    ? `${backups.length} · ${formatBytes(backupBytes)}`
-                    : 'None yet'
-                  : 'Off for this game'
-              }
-            />
-          </>
-        }
       />
 
       <div className="px-8">
@@ -145,31 +117,56 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
         </p>
 
         {/*
-          * The summary is provider text and can be several paragraphs, so it is
-          * clamped rather than allowed to push the stats off screen. It renders
-          * only when a provider actually supplied one -- an empty box would
-          * imply the lookup failed rather than that it was never made.
+          * Renders only when a provider actually supplied a summary -- an empty
+          * box would imply the lookup failed rather than that it was never made.
           */}
-        {game.summary && (
-          <p className="mt-4 max-w-3xl text-sm leading-relaxed text-content-400">{game.summary}</p>
-        )}
+        {game.summary && <Synopsis text={game.summary} />}
 
         <div className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <Stat label="Total playtime" value={formatPlaytime(game.totalPlaytimeSeconds)} />
-          <Stat label="Sessions" value={stats ? String(stats.sessionCount) : '—'} />
           <Stat
+            icon={<ClockIcon />}
+            label="Total playtime"
+            value={formatPlaytime(game.totalPlaytimeSeconds)}
+          />
+          <Stat
+            icon={<PlayIcon />}
+            label="Sessions"
+            value={stats ? String(stats.sessionCount) : '—'}
+          />
+          <Stat
+            icon={<ClockIcon />}
             label="Longest session"
             value={
               stats && stats.longestSeconds > 0 ? formatSessionDuration(stats.longestSeconds) : '—'
             }
           />
           <Stat
+            icon={<ClockIcon />}
             label="Average session"
             value={
               stats && stats.averageSeconds > 0 ? formatSessionDuration(stats.averageSeconds) : '—'
             }
           />
-          <Stat label="Last played" value={formatDateTime(game.lastPlayedAt)} />
+          <Stat
+            icon={<CalendarIcon />}
+            label="Last played"
+            value={formatDateTime(game.lastPlayedAt)}
+          />
+          {/* Carried over from the header panel this replaced, so nothing was lost. */}
+          <Stat
+            icon={<ArchiveIcon />}
+            label="Backups"
+            value={
+              game.saveFolderPath
+                ? backups.length > 0
+                  ? `${backups.length} · ${formatBytes(backupBytes)}`
+                  : 'None yet'
+                : // Short enough to fit the tile. "Off for this game" truncated to
+                  // "Off for this g…", and a clipped value is worse than a terse
+                  // one when the label above it already says Backups.
+                  'Off'
+            }
+          />
         </div>
 
         <div className="mt-8 rounded-xl border border-surface-700 bg-surface-850 p-5">
@@ -184,7 +181,12 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
 
           <section>
             <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-content-200">Save backups</h2>
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-content-200">
+                <span className="text-content-500">
+                  <SaveIcon />
+                </span>
+                Save backups
+              </h2>
               {backups.length > 0 && (
                 <span className="text-xs text-content-500">
                   {backups.length} · {formatBytes(backupBytes)}
@@ -231,9 +233,11 @@ export function GameDetailPage({ gameId }: { gameId: number }) {
  * rather than disguised:
  *
  *   1. `heroImagePath` — wide key art from a provider. What this is designed for.
- *   2. the cover, blurred and scaled — a colour wash, not a claim. The unblurred
- *      original sits a few pixels away in the thumbnail, so nothing about it
- *      suggests the game has key art it does not have.
+ *   2. the cover, centre-cropped to the wide frame. Deliberately NOT blurred:
+ *      the blur it used to carry hid the only artwork the game had, and the
+ *      unblurred original sits a few pixels away in the thumbnail anyway. The
+ *      state stays distinguishable through `data-testid`, which is what the
+ *      suite guards.
  *   3. a plain gradient, with the absence STATED. A bare gradient reads equally
  *      as "no artwork" and as "the image failed to load", which is the same
  *      ambiguity the grid cards avoid by saying "No cover".
@@ -247,32 +251,36 @@ function HeroHeader({
   game,
   cover,
   actions,
-  info,
   onBack,
   onViewCover
 }: {
   game: Game
   cover: string | null
   actions: React.ReactNode
-  info: React.ReactNode
   onBack: () => void
   onViewCover: () => void
 }) {
   const hero = heroUrl(game)
   const backdrop = hero ?? cover
-  const usingCoverAsBackdrop = !hero && cover !== null
 
   return (
-    <section className="relative isolate h-[clamp(360px,50vh,520px)] w-full overflow-hidden">
+    <section className="relative isolate h-[clamp(420px,58vh,600px)] w-full overflow-hidden">
       {backdrop ? (
         <img
           src={backdrop}
           alt=""
           aria-hidden="true"
           data-testid={hero ? 'hero-art' : 'hero-fallback'}
-          className={`absolute inset-0 h-full w-full object-cover object-center ${
-            usingCoverAsBackdrop ? 'scale-125 blur-2xl' : ''
-          }`}
+          /*
+           * Shown unblurred, including when it is the cover standing in for
+           * missing wide art. The blur was there to keep a portrait cover from
+           * passing as key art, but it cost the artwork itself -- a wash of
+           * colour is not what anyone opened the page to look at. `object-cover`
+           * centre-crops instead, which reads as a zoom rather than a claim, and
+           * the fallback is still distinguishable in the DOM for the tests that
+           * guard it.
+           */
+          className="absolute inset-0 h-full w-full object-cover object-center"
         />
       ) : (
         <div
@@ -282,18 +290,22 @@ function HeroHeader({
       )}
 
       {/*
-        * Four scrims, each doing one job. Separate layers rather than one
-        * many-stop gradient because they are tuned independently and a single
-        * combined expression stops being editable by anyone but its author.
+        * Scrims, each doing one job. Separate layers rather than one many-stop
+        * gradient because they are tuned independently and a single combined
+        * expression stops being editable by anyone but its author.
+        *
+        * Retuned when the backdrop stopped being blurred. The previous values
+        * were set against a blur, where crushing the image cost nothing because
+        * there was nothing to see; over real artwork they flattened it to
+        * near-black, which defeats having a key-art header at all. Each layer is
+        * now the lightest value that still keeps the text over it legible.
         */}
-      {/* Flat wash — stops bright key art from overpowering the app's chrome. */}
-      <div className="absolute inset-0 bg-surface-950/30" />
       {/* Bottom — dissolves the hard horizontal edge into the page below. */}
-      <div className="absolute inset-0 bg-gradient-to-t from-surface-900 via-surface-900/55 to-transparent" />
-      {/* Left — darkens the side the title and buttons sit on. */}
-      <div className="absolute inset-0 bg-gradient-to-r from-surface-900/90 via-surface-900/25 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-surface-900 via-surface-900/40 to-transparent" />
+      {/* Left — darkens the side the title and buttons sit on, and only that side. */}
+      <div className="absolute inset-0 bg-gradient-to-r from-surface-900/85 via-surface-900/20 to-transparent" />
       {/* Top — the back control sits up here, over whatever the art happens to be. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-surface-950/70 via-transparent to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-b from-surface-950/55 via-transparent to-transparent" />
 
       <div className="relative flex h-full flex-col justify-between p-8">
         <div className="flex items-start justify-between gap-4">
@@ -310,7 +322,7 @@ function HeroHeader({
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="min-w-0 max-w-2xl">
             <div className="flex items-end gap-4">
-              <div className="h-32 w-24 shrink-0 overflow-hidden rounded-xl border border-surface-600/70 bg-surface-900 shadow-2xl shadow-black/50">
+              <div className="h-40 w-28 shrink-0 overflow-hidden rounded-xl border border-surface-600/70 bg-surface-900 shadow-2xl shadow-black/50">
                 {cover ? (
                   // Box art carries a title and small print that is illegible at
                   // 96px, so it stays openable at full size.
@@ -344,47 +356,31 @@ function HeroHeader({
                 <h1 className="truncate text-4xl font-bold tracking-tight text-content-100 drop-shadow-lg">
                   {game.name}
                 </h1>
-                <p className="mt-1.5 text-sm text-content-300 drop-shadow">
+                <p className="mt-1.5 flex items-center gap-1.5 text-sm text-content-300 drop-shadow">
+                  <CalendarIcon />
                   {formatReleaseDate(game)}
-                  {game.genres && game.genres.length > 0 && ` · ${game.genres.join(', ')}`}
                 </p>
               </div>
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-2">{actions}</div>
-          </div>
 
-          {/*
-            * The panel is translucent so the artwork stays visible behind it,
-            * which is the whole reason the header is worth having. It is opaque
-            * enough for small text to survive a bright image underneath.
-            */}
-          <aside className="w-full max-w-xs shrink-0 rounded-2xl border border-surface-600/60 bg-surface-950/65 p-4 backdrop-blur-md">
-            <div className="flex flex-col gap-2.5">{info}</div>
-          </aside>
+            {/*
+              * Genres sit directly under the controls as pills.
+              *
+              * They were previously one row of a six-row translucent panel over
+              * on the right, which duplicated four stats that the grid below the
+              * header already showed, and covered the artwork the header exists
+              * to display. Pills read at a glance, cost no vertical space and
+              * leave the art visible.
+              */}
+            <div className="mt-4">
+              <GenreList game={game} />
+            </div>
+          </div>
         </div>
       </div>
     </section>
-  )
-}
-
-function InfoRow({
-  icon,
-  label,
-  value
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-}) {
-  return (
-    <div className="flex items-center gap-2.5 text-xs">
-      <span className="shrink-0 text-content-500">{icon}</span>
-      <span className="shrink-0 text-content-500">{label}</span>
-      <span className="ml-auto min-w-0 truncate text-right text-content-200" title={value}>
-        {value}
-      </span>
-    </div>
   )
 }
 
@@ -413,13 +409,105 @@ function formatGenres(game: Game): string {
   return game.genres.join(', ')
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  icon,
+  label,
+  value
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+}) {
   return (
     <div className="rounded-xl border border-surface-700 bg-surface-850 px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-content-500">{label}</p>
+      <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-content-500">
+        <span className="shrink-0">{icon}</span>
+        {label}
+      </p>
       <p className="mt-1 truncate text-lg font-semibold text-content-100" title={value}>
         {value}
       </p>
+    </div>
+  )
+}
+
+/**
+ * Genres as pills, with the null/empty distinction intact.
+ *
+ * `genres` is null when the game has never been looked up and `[]` when a
+ * provider looked and listed none. Those are different claims and the wording
+ * differs, which the detail-view suite asserts -- pills alone would collapse
+ * both into "no pills".
+ */
+function GenreList({ game }: { game: Game }) {
+  if (game.genres === null || game.genres.length === 0) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-content-500 drop-shadow">
+        <TagIcon />
+        {formatGenres(game)}
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="mr-0.5 text-content-400 drop-shadow">
+        <TagIcon />
+      </span>
+      {game.genres.map((genre) => (
+        <span
+          key={genre}
+          className="rounded-full border border-surface-500/60 bg-surface-950/60 px-2.5 py-1 text-xs font-medium text-content-200 backdrop-blur-md"
+        >
+          {genre}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Length beyond which the summary is clamped and offered a "Read more".
+ *
+ * A character count rather than measuring the rendered element: measuring means
+ * a layout read on every render plus a resize listener to stay correct, for a
+ * decision that only needs to be roughly right. Three lines of this column is
+ * about this many characters.
+ */
+const SYNOPSIS_CLAMP_CHARS = 260
+
+/**
+ * Provider summaries run to several paragraphs, which pushed the stats and the
+ * activity chart off the first screen. Clamped to three lines with an explicit
+ * toggle -- and the toggle appears only when there is actually more to show, so
+ * it never invites a click that changes nothing.
+ */
+function Synopsis({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const isLong = text.length > SYNOPSIS_CLAMP_CHARS
+
+  return (
+    <div className="mt-5 max-w-3xl">
+      <h2 className="mb-2 text-sm font-semibold text-content-200">About</h2>
+      <p
+        data-testid="synopsis"
+        className={`text-sm leading-relaxed text-content-400 ${
+          isLong && !expanded ? 'line-clamp-3' : ''
+        }`}
+      >
+        {text}
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          data-testid="synopsis-toggle"
+          className="mt-1.5 text-xs font-medium text-accent-400 hover:text-accent-300"
+        >
+          {expanded ? 'Show less' : 'Read more'}
+        </button>
+      )}
     </div>
   )
 }

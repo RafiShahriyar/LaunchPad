@@ -214,3 +214,28 @@ body {
   scrollbar-color: var(--color-surface-600) transparent;
   scrollbar-width: thin;
 }
+
+/*
+ * Buttons get a pointer cursor.
+ *
+ * Tailwind v4's Preflight leaves buttons at the browser default, which is
+ * `cursor: default` -- so every button in the app looked unclickable. Set here
+ * once rather than sprinkling `cursor-pointer` on each one, because the rule is
+ * "anything clickable" and a per-component class is something to forget.
+ *
+ * Disabled controls are excluded: the Button component already declares
+ * `disabled:cursor-not-allowed`, and a pointer on a dead control is a lie about
+ * what will happen when it is clicked. The title bar's own drag strip keeps its
+ * own cursor, set above.
+ */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+summary,
+label:has(input[type='checkbox']:not(:disabled)) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role='button'][aria-disabled='true'] {
+  cursor: not-allowed;
+}
