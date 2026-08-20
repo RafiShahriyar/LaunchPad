@@ -13,8 +13,9 @@ import {
 
 const COLUMNS = `
   id, name, executable_path, working_directory, launch_args, save_folder_path,
-  cover_image_path, genres, summary, release_date, metadata_source, metadata_id,
-  metadata_updated_at, total_playtime_seconds, last_played_at, created_at, updated_at
+  cover_image_path, hero_image_path, genres, summary, release_date, metadata_source,
+  metadata_id, metadata_updated_at, total_playtime_seconds, last_played_at, created_at,
+  updated_at
 `
 
 /**
@@ -58,6 +59,7 @@ function mapGame(row: SqlRow): Game {
     launchArgs: readStringOrNull(row, 'launch_args'),
     saveFolderPath: readStringOrNull(row, 'save_folder_path'),
     coverImagePath: readStringOrNull(row, 'cover_image_path'),
+    heroImagePath: readStringOrNull(row, 'hero_image_path'),
     genres: parseGenres(readStringOrNull(row, 'genres')),
     summary: readStringOrNull(row, 'summary'),
     releaseDate: readStringOrNull(row, 'release_date'),
@@ -195,6 +197,31 @@ export function applyMetadata(id: number, patch: GameMetadataPatch, now: string)
 
   const updated = getGame(id)
   if (!updated) throw new Error(`Game ${id} not found after metadata update`)
+  return updated
+}
+
+/**
+ * Points a game at its wide backdrop art, or clears it with null.
+ *
+ * Its own function rather than a member of GameUpdate, because GameUpdate models
+ * what a *user* authors and there is no picker for a hero image — it arrives
+ * only from a provider. Adding it to NewGame would widen the games:create and
+ * games:update IPC surface for a field nothing can currently send.
+ *
+ * Separate from applyMetadata for the opposite reason to genres: the hero is
+ * downloaded after the text fields are already committed, so folding it in
+ * would mean either delaying the metadata write behind a network round trip or
+ * writing the same row twice anyway.
+ */
+export function setHeroImagePath(id: number, heroImagePath: string | null, now: string): Game {
+  const result = getDb()
+    .prepare('UPDATE games SET hero_image_path = ?, updated_at = ? WHERE id = ?')
+    .run(bindNullable(heroImagePath), now, id)
+
+  if (toNumber(result.changes) === 0) throw new Error(`Game ${id} not found`)
+
+  const updated = getGame(id)
+  if (!updated) throw new Error(`Game ${id} not found after hero image update`)
   return updated
 }
 

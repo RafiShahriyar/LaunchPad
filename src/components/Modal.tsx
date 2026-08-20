@@ -57,8 +57,8 @@ export function Modal({ title, description, onClose, children, footer, size = 'm
         }`}
       >
         <header className="border-b border-surface-700 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
-          {description && <p className="mt-1 text-sm text-slate-400">{description}</p>}
+          <h2 className="text-lg font-semibold text-content-100">{title}</h2>
+          {description && <p className="mt-1 text-sm text-content-400">{description}</p>}
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
@@ -78,14 +78,25 @@ export function Button({
   className = '',
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'glass'
 }) {
   const variants = {
     primary: 'bg-accent-600 text-white hover:bg-accent-500 disabled:bg-accent-600/40',
     secondary:
-      'bg-surface-700 text-slate-200 hover:bg-surface-600 disabled:text-slate-500',
+      'bg-surface-700 text-content-200 hover:bg-surface-600 disabled:text-content-500',
     danger: 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-600/40',
-    ghost: 'text-slate-400 hover:bg-surface-800 hover:text-slate-200'
+    ghost: 'text-content-400 hover:bg-surface-800 hover:text-content-200',
+    /*
+     * For controls sitting on top of artwork rather than on a surface.
+     *
+     * A real variant rather than extra classes on `secondary`, because two
+     * `bg-*` utilities on one element are resolved by their order in the
+     * generated stylesheet, not by their order in the class attribute -- so
+     * "override it at the call site" silently works or does not depending on
+     * which utility Tailwind happened to emit last.
+     */
+    glass:
+      'bg-surface-950/55 text-content-100 backdrop-blur-md hover:bg-surface-950/75 disabled:text-content-500'
   }
 
   return (

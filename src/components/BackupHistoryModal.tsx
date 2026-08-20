@@ -45,7 +45,7 @@ export function BackupHistoryModal({ gameId }: { gameId: number }) {
       onClose={() => dispatch(modalClosed())}
       footer={
         <>
-          <span className="mr-auto text-xs text-slate-500">
+          <span className="mr-auto text-xs text-content-500">
             {backups.length} snapshot{backups.length === 1 ? '' : 's'} · {formatBytes(totalBytes)}
           </span>
           <Button variant="ghost" onClick={() => dispatch(modalClosed())}>
@@ -62,7 +62,7 @@ export function BackupHistoryModal({ gameId }: { gameId: number }) {
       }
     >
       {status === 'loading' && backups.length === 0 && (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-content-500">Loading…</p>
       )}
 
       {error && (

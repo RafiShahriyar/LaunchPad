@@ -7,7 +7,7 @@ import {
   type OrphanCleanupResult,
   type OrphanScanResult
 } from '@shared/ipc'
-import type { AppSettings } from '@shared/types'
+import { isThemeId, type AppSettings } from '@shared/types'
 import { settingsRepo } from '@db/index'
 import { cleanupOrphanedBackups, scanForOrphanedBackups } from '../services/maintenance'
 import { seedDemoData } from '../services/demoData'
@@ -71,8 +71,21 @@ function validatePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
     validated.sidebarCollapsed = patch.sidebarCollapsed
   }
 
-  // `theme` is intentionally not accepted: the light theme is not implemented,
-  // so allowing it to be set would persist a value nothing honours.
+  /*
+   * `theme` used to be refused outright, because nothing in the renderer
+   * honoured it and persisting a value the UI ignores is a lie the settings
+   * screen would then have to tell.
+   *
+   * It is accepted now that every id in ThemeId maps to a real palette. The
+   * check is the shared type guard rather than a list written out here: a list
+   * would be a second place to update, and the one that gets forgotten.
+   */
+  if (patch.theme !== undefined) {
+    if (!isThemeId(patch.theme)) {
+      throw new Error(`Unknown theme: ${JSON.stringify(patch.theme)}`)
+    }
+    validated.theme = patch.theme
+  }
 
   return validated
 }

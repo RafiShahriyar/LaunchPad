@@ -137,6 +137,7 @@ interface IgdbGame {
   first_release_date?: unknown
   genres?: unknown
   cover?: unknown
+  artworks?: unknown
 }
 
 /** IGDB reports release dates as whole-second Unix timestamps, in UTC. */
@@ -159,6 +160,23 @@ function toGenres(value: unknown): string[] {
   return names
 }
 
+/**
+ * First usable artwork id from IGDB's `artworks` array.
+ *
+ * Separate from toImageId because the shapes differ: `cover` is a single
+ * object, `artworks` is a list. IGDB orders it by upload rather than quality,
+ * so the first entry is simply the first -- there is no ranking to apply, and
+ * inventing one would be guesswork dressed as selection.
+ */
+function toArtworkId(artworks: unknown): string | null {
+  if (!Array.isArray(artworks)) return null
+  for (const entry of artworks) {
+    const id = toImageId(entry)
+    if (id !== null) return id
+  }
+  return null
+}
+
 function toImageId(cover: unknown): string | null {
   if (!cover || typeof cover !== 'object') return null
   const imageId = (cover as { image_id?: unknown }).image_id
@@ -173,6 +191,7 @@ function mapResult(raw: IgdbGame): { result: MetadataSearchResult; thumbUrl: str
   if (typeof name !== 'string' || name.length === 0) return null
 
   const imageId = toImageId(raw.cover)
+  const artworkId = toArtworkId(raw.artworks)
 
   return {
     result: {
@@ -189,6 +208,15 @@ function mapResult(raw: IgdbGame): { result: MetadataSearchResult; thumbUrl: str
        * art never shown above card size.
        */
       coverUrl: imageId === null ? null : `${IMAGE_BASE}/t_cover_big_2x/${imageId}.jpg`,
+      /*
+       * `artworks` before `screenshots`: artwork is produced key art, while a
+       * screenshot is whatever frame someone captured -- often a HUD, a menu or
+       * a loading screen, none of which read well with a title over them.
+       *
+       * `t_1080p` because this is drawn full-bleed across the window; the cover
+       * sizes would be visibly soft stretched that wide.
+       */
+      heroUrl: artworkId === null ? null : `${IMAGE_BASE}/t_1080p/${artworkId}.jpg`,
       thumbnailDataUri: null
     },
     /** 90x128 -- a few kilobytes, which is what makes inlining them affordable. */
@@ -278,7 +306,7 @@ export const igdb: MetadataProviderClient = {
 
     const payload = await postGamesQuery(
       `search "${query}"; ` +
-        'fields name,summary,first_release_date,genres.name,cover.image_id; ' +
+        'fields name,summary,first_release_date,genres.name,cover.image_id,artworks.image_id; ' +
         'where version_parent = null; ' +
         `limit ${MAX_RESULTS};`,
       values

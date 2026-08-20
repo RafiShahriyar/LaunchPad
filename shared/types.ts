@@ -24,6 +24,18 @@ export interface Game {
   /** Absolute path to a cover image on disk, or null for the generated placeholder. */
   coverImagePath: string | null
   /**
+   * Absolute path to wide key art used as the detail page's backdrop.
+   *
+   * Deliberately not the same field as `coverImagePath`: the cover is portrait
+   * 3:4 for the grid card, this is roughly 16:6 and only ever drawn full-bleed
+   * behind text. A game can have one without the other — SteamGridDB carries
+   * grids for many more titles than it carries heroes — so collapsing them
+   * would mean stretching box art across the header or emptying the grid card.
+   *
+   * Null means no wide art, which the detail page states rather than hides.
+   */
+  heroImagePath: string | null
+  /**
    * Genres reported by the metadata provider.
    *
    * `null` and `[]` mean different things and the UI renders them differently:
@@ -103,6 +115,44 @@ export type CoverArtSource = 'steamgriddb'
 /** Anything that needs credentials stored on this machine. */
 export type CredentialProvider = MetadataSource | CoverArtSource
 
+/**
+ * Colour themes.
+ *
+ * `dark` keeps its original id rather than being renamed to something prettier
+ * like `midnight`. Existing databases already store the string `dark`, and the
+ * settings parser falls back to the default for any value it does not
+ * recognise — so a rename would silently reset the theme of every install that
+ * upgrades. A display label costs nothing; a migration for a cosmetic id is not
+ * worth writing.
+ *
+ * Every theme is dark. See the note in src/index.css: status banners are not
+ * part of any ramp, so a light surface would render them dark-on-dark. `light`
+ * is absent rather than present-and-broken.
+ */
+export type ThemeId = 'dark' | 'nebula' | 'ember' | 'verdant'
+
+/**
+ * The runtime enumeration of ThemeId.
+ *
+ * A Record rather than a `readonly ThemeId[]`, because an array literal happily
+ * accepts a SHORT list: adding a member to the union and forgetting to list it
+ * compiles clean and fails at runtime. That exact mistake shipped once already
+ * (`metadata_source: rawg is not one of igdb`) and was caught only by the e2e
+ * suite. As a Record, a missing member is a compile error.
+ */
+export const THEME_IDS: Record<ThemeId, true> = {
+  dark: true,
+  nebula: true,
+  ember: true,
+  verdant: true
+}
+
+export const ALL_THEME_IDS = Object.keys(THEME_IDS) as ThemeId[]
+
+export function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === 'string' && value in THEME_IDS
+}
+
 export interface AppSettings {
   /** Root folder that per-game backup folders live under. */
   backupsRootPath: string
@@ -112,7 +162,7 @@ export interface AppSettings {
   backupAfterSession: boolean
   /** Sessions shorter than this are discarded (misclicks, failed launches). */
   minSessionSeconds: number
-  theme: 'dark' | 'light'
+  theme: ThemeId
   /** Sidebar collapsed to icons only. Persisted so it survives a restart. */
   sidebarCollapsed: boolean
 }

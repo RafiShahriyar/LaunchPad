@@ -55,15 +55,15 @@ export function RestoreBackupDialog({ backupId }: { backupId: number }) {
           </Button>
         }
       >
-        <div className="space-y-4 text-sm text-slate-300">
+        <div className="space-y-4 text-sm text-content-300">
           <p>
             {game.name} has been restored from the snapshot taken{' '}
             <strong>{formatDate(backup.createdAt)}</strong>.
           </p>
           {lastRestore.recreatedSaveFolder && (
-            <p className="rounded-lg border border-surface-600 bg-surface-900 px-4 py-3 text-xs text-slate-400">
+            <p className="rounded-lg border border-surface-600 bg-surface-900 px-4 py-3 text-xs text-content-400">
               The save folder did not exist and was recreated at
-              <span className="mt-1 block font-mono text-slate-300">
+              <span className="mt-1 block font-mono text-content-300">
                 {lastRestore.saveFolderPath}
               </span>
             </p>
@@ -104,10 +104,10 @@ export function RestoreBackupDialog({ backupId }: { backupId: number }) {
         </>
       }
     >
-      <div className="space-y-4 text-sm text-slate-300">
+      <div className="space-y-4 text-sm text-content-300">
         <div className="rounded-lg border border-surface-600 bg-surface-900 p-4">
-          <p className="text-xs uppercase tracking-wide text-slate-500">Restoring</p>
-          <p className="mt-1 text-slate-200">
+          <p className="text-xs uppercase tracking-wide text-content-500">Restoring</p>
+          <p className="mt-1 text-content-200">
             {formatDate(backup.createdAt)} · {backup.fileCount} file
             {backup.fileCount === 1 ? '' : 's'} · {formatBytes(backup.sizeBytes)}
           </p>
@@ -135,15 +135,15 @@ export function RestoreBackupDialog({ backupId }: { backupId: number }) {
         )}
 
         <label className="block">
-          <span className="mb-1.5 block text-xs text-slate-400">
-            Type <span className="font-mono text-slate-200">{confirmWord}</span> to confirm
+          <span className="mb-1.5 block text-xs text-content-400">
+            Type <span className="font-mono text-content-200">{confirmWord}</span> to confirm
           </span>
           <input
             value={typed}
             onChange={(event) => setTyped(event.target.value)}
             disabled={isRunning || isRestoring}
             aria-label="Restore confirmation"
-            className="w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent-500 focus:outline-none disabled:opacity-50"
+            className="w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-content-200 placeholder:text-content-600 focus:border-accent-500 focus:outline-none disabled:opacity-50"
             placeholder={confirmWord}
             autoComplete="off"
             spellCheck={false}

@@ -269,14 +269,14 @@ export function GameFormModal({ game }: GameFormModalProps) {
                 className="h-16 w-12 shrink-0 rounded border border-surface-600 object-cover"
               />
             )}
-            <div className="min-w-0 flex-1 text-xs text-slate-400">
-              <p className="text-sm text-slate-200">{match.name}</p>
+            <div className="min-w-0 flex-1 text-xs text-content-400">
+              <p className="text-sm text-content-200">{match.name}</p>
               <p className="mt-0.5">
                 {match.genres.length > 0
                   ? match.genres.join(', ')
                   : 'The provider lists no genres for this entry'}
               </p>
-              <p className="mt-1 text-slate-500">
+              <p className="mt-1 text-content-500">
                 {/*
                   Says exactly what pressing save will do, including when it
                   will NOT replace artwork the user picked themselves.
@@ -291,7 +291,7 @@ export function GameFormModal({ game }: GameFormModalProps) {
             <button
               type="button"
               onClick={() => setMatch(null)}
-              className="shrink-0 text-xs text-slate-500 hover:text-slate-300"
+              className="shrink-0 text-xs text-content-500 hover:text-content-300"
               aria-label="Discard the selected match"
             >
               ✕
@@ -349,7 +349,7 @@ export function GameFormModal({ game }: GameFormModalProps) {
               {previewUrl ? (
                 <Button onClick={() => setViewingCover(true)}>View full size</Button>
               ) : (
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-content-500">
                   {/*
                     Distinguishes "none chosen" from "one is coming", so the
                     empty box never looks like something that failed to load.
@@ -373,7 +373,7 @@ export function GameFormModal({ game }: GameFormModalProps) {
           <button
             type="button"
             onClick={() => setShowAdvanced((open) => !open)}
-            className="text-sm text-slate-400 hover:text-slate-200"
+            className="text-sm text-content-400 hover:text-content-200"
           >
             {showAdvanced ? '▾' : '▸'} Advanced
           </button>
@@ -447,7 +447,7 @@ export function GameFormModal({ game }: GameFormModalProps) {
 }
 
 const inputClass =
-  'w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent-500 focus:outline-none'
+  'w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-content-200 placeholder:text-content-600 focus:border-accent-500 focus:outline-none'
 
 function Field({
   label,
@@ -462,12 +462,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-slate-300">
+      <span className="mb-1.5 block text-sm font-medium text-content-300">
         {label}
         {required && <span className="ml-1 text-accent-400">*</span>}
       </span>
       {children}
-      {hint && <span className="mt-1.5 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-xs text-content-500">{hint}</span>}
     </label>
   )
 }

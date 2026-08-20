@@ -53,12 +53,12 @@ export function CoverViewer({ src, title, onClose }: CoverViewerProps) {
         className="max-h-[80vh] max-w-full rounded-lg border border-surface-600 object-contain shadow-2xl"
       />
       <div className="mt-4 flex items-center gap-4">
-        <p className="text-sm text-slate-400">{title}</p>
+        <p className="text-sm text-content-400">{title}</p>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close cover viewer"
-          className="rounded-lg bg-surface-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-surface-600"
+          className="rounded-lg bg-surface-700 px-4 py-2 text-sm font-medium text-content-200 hover:bg-surface-600"
         >
           Close
         </button>
@@ -81,8 +81,8 @@ export function NoCover({ compact = false }: { compact?: boolean }) {
       data-testid="no-cover"
     >
       <div className="px-2">
-        <div className={compact ? 'text-xl text-slate-700' : 'text-3xl text-slate-700'}>▦</div>
-        {!compact && <p className="mt-1 text-[11px] leading-tight text-slate-600">No cover image</p>}
+        <div className={compact ? 'text-xl text-content-700' : 'text-3xl text-content-700'}>▦</div>
+        {!compact && <p className="mt-1 text-[11px] leading-tight text-content-600">No cover image</p>}
       </div>
     </div>
   )

@@ -19,6 +19,7 @@ export default function App() {
   const dispatch = useAppDispatch()
   const activeView = useAppSelector((state) => state.ui.activeView)
   const selectedGameId = useAppSelector((state) => state.ui.selectedGameId)
+  const theme = useAppSelector((state) => state.settings.settings?.theme)
 
   // Initial load. All three are independent, so they run concurrently.
   // syncRunningGames matters on every mount, not just the first: which games are
@@ -35,6 +36,23 @@ export default function App() {
     // the title bar would guess wrong about fullscreen and native controls.
     void dispatch(fetchWindowState())
   }, [dispatch])
+
+  /*
+   * The palette is applied to <html>, not to a React-owned wrapper.
+   *
+   * `body` carries the app background and the scrollbar rules read
+   * `--color-surface-600`, and both sit outside the React tree -- an attribute
+   * on a div inside #root would leave the window's own backdrop and its
+   * scrollbars painted in the previous theme.
+   *
+   * Undefined until settings arrive, which is the one frame before the first
+   * IPC round trip resolves. Falling back to the default rather than leaving
+   * the attribute off keeps the DOM's answer to "which theme" explicit at all
+   * times, which is also what the e2e suite reads.
+   */
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme ?? 'dark'
+  }, [theme])
 
   return (
     // Column layout: the title bar spans the full width above the sidebar, so

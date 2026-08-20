@@ -7,8 +7,8 @@ SQLite via `node:sqlite`.
 All 8 planned features are built, plus custom window chrome (dark title bar,
 self-drawn window controls, fullscreen), a collapsible sidebar, game-metadata
 lookup (cover art, genres, summaries) from IGDB or RAWG with optional
-SteamGridDB artwork, and a dev-only sample-data seeder.
-**544 assertions pass** — 97 in the data-layer suite and 447 end-to-end against a
+SteamGridDB artwork, four colour themes, and a dev-only sample-data seeder.
+**608 assertions pass** — 106 in the data-layer suite and 502 end-to-end against a
 live Electron window. Both are committed and runnable with `npm test`.
 
 Repository: <https://github.com/RafiShahriyar/LaunchPad>
@@ -28,8 +28,8 @@ npm run dev        # electron-vite dev --watch : renderer HMR + main/preload res
 npm run build      # typecheck both projects, then build all three targets to out/
 npm start          # run the production build unpackaged
 npm run typecheck  # both tsconfig projects
-npm run verify:db  # 97-assertion data-layer suite (plain Node, ~1s)
-npm run test:e2e   # 447 assertions against a real Electron window (~3 min)
+npm run verify:db  # 106-assertion data-layer suite (plain Node, ~1s)
+npm run test:e2e   # 502 assertions against a real Electron window (~3 min)
 npm test           # both
 npm run dist       # build + electron-builder → Windows (see Packaging below)
 ```
@@ -191,6 +191,67 @@ layer above `Modal`'s `z-50`.
 - **Use `z-[60]`, not `z-60`.** Tailwind's default z-index scale stops at 50, so
   `z-60` is silently dropped and the viewer renders *under* the dialog it was
   opened from.
+
+**Two `bg-*` utilities on one element resolve by STYLESHEET order, not class
+order.** So "set the variant, then override the background at the call site"
+works or does not depending on which utility Tailwind happened to emit last —
+and it can differ between the dev server and a production build. Add a real
+variant instead; `Button`'s `glass` (translucent, for controls sitting on
+artwork rather than on a surface) is the worked example. The same trap applies
+to any pair of utilities setting one property.
+
+**Wide art is a SEPARATE column from the cover, and they can be the same file.**
+`hero_image_path` (schema v4) holds the detail page's backdrop. Both live in the
+managed covers folder, so the `lpasset://` handler, the download guards and
+`deleteCoversForGame()`'s prefix sweep all cover them unchanged.
+- **`swapArtwork()` takes a `keep` argument, and removing it reintroduces a real
+  bug.** A RAWG-only setup writes ONE landscape image to both columns — its
+  `background_image` is a screenshot, which is exactly why it makes a poor 3:4
+  cover and a fine backdrop. Replacing the cover would then delete the file the
+  hero still points at. `keep` is the other artwork path and suppresses the
+  delete when they match.
+- **Cover and hero report separate errors** (`coverError` / `heroError`). They
+  fail for different reasons with different consequences, and one combined field
+  could not say which happened.
+- The art provider is asked for each shape separately, so **SteamGridDB costs two
+  name lookups per apply**. Deliberate: caching the id across them would save one
+  request on a path nobody runs in a loop, in exchange for a cache to invalidate.
+- **The three-step backdrop fallback lives in the renderer, not the row.** Wide
+  art → blurred cover → stated absence. Writing "use the cover" into the database
+  would make the row claim something no provider said.
+
+**Themes are CSS variables, and that is load-bearing.** Tailwind v4 compiles
+`bg-surface-900` to `var(--color-surface-900)` rather than inlining the hex, so a
+theme is sixteen redefined variables under `[data-theme='…']` and switching one
+repaints the app through the cascade. Three ramps: `surface-*` (backgrounds),
+`content-*` (text), `accent-*` (the interactive hue).
+- **Never hardcode a `slate-*` (or any palette) class for text.** Use
+  `text-content-*`. The 152 hardcoded ones were what blocked theming for the
+  whole project until they were renamed; adding one back silently un-themes that
+  element.
+- **The selector is `[data-theme=…]`, deliberately NOT `:root[data-theme=…]`.**
+  `:root` matches `<html>` alone, so the settings picker — which previews each
+  palette by nesting the attribute — would render four identical swatches. The
+  unanchored form also sidesteps a specificity race: these blocks are unlayered
+  and beat everything Tailwind puts in `@layer theme`.
+- **The attribute goes on `<html>`**, because `body` and the scrollbar rules sit
+  outside the React tree.
+- `@theme` and `[data-theme='dark']` hold the same sixteen values, unavoidably —
+  `@theme` must declare every token for Tailwind to generate the utility at all,
+  while a nested swatch needs somewhere to reset to. `themes.mjs` asserts they
+  match rather than trusting the comment.
+- **`dark` keeps its id** rather than becoming `midnight`: stored settings say
+  `dark`, and unknown values fall back to the default, so a cosmetic rename would
+  reset every upgrading install.
+
+**`db/verify.ts` bundles with no path aliases unless told.** It is built by a bare
+`esbuild` call, which for a long time needed no alias config because `db/`
+imported only *types* from `@shared` — and type imports erase before bundling.
+The first runtime import (`isThemeId`) broke it with
+`Could not resolve "@shared/types"`. Fixed by adding `--tsconfig=tsconfig.node.json`
+so esbuild reads the `paths` already declared there, rather than duplicating the
+mapping on the command line. Expect this again if `db/` gains another runtime
+import from a new alias.
 
 **Hooks go above the early return in `GameDetailPage`.** It returns early when
 the game is gone, so a `useState` declared next to the markup that uses it
@@ -418,7 +479,7 @@ enabling **Windows Developer Mode**, and is unrelated to the version pin.
       falls back to this.
 - [ ] Configure code signing — unsigned installers trigger SmartScreen.
 - [ ] Resolve the two packaging blockers above.
-- [ ] Consider code-splitting: the renderer bundle is ~740 kB (~230 kB gzipped).
+- [ ] Consider code-splitting: the renderer bundle is ~793 kB, **~146 kB gzipped** (measured, not estimated — Vite reports decimal kB).
       Fine for a desktop app loading from disk, but it has grown steadily.
 
 ---
@@ -432,14 +493,14 @@ npm run test:e2e      # end-to-end, ~3 min
 npm run test:e2e -- backups   # one suite while debugging
 ```
 
-**`db/verify.ts` (97 assertions)** runs the real repositories against a temp
+**`db/verify.ts` (106 assertions)** runs the real repositories against a temp
 database under plain Node — possible only because `db/` imports nothing from
 Electron. It includes **hand-built v1→v2 and v2→v3 migration tests**; migrations
 are the one thing that cannot be fixed after release. Each builds its legacy
 database by hand rather than replaying the project's own migration list, which
 would only prove the list is self-consistent.
 
-**`tests/` (447 assertions across 12 suites)** drives a real Electron window over
+**`tests/` (502 assertions across 13 suites)** drives a real Electron window over
 the Chrome DevTools Protocol. Most of what matters here only exists across the
 process boundary — IPC validation, push events, file copies, window chrome — so
 mounting components in isolation would exercise none of it.
@@ -451,11 +512,12 @@ mounting components in isolation would exercise none of it.
 | `sessions` | Launch, exit detection, discard threshold, crash recovery |
 | `backups` | Copy, dedup, rotation, pinning, usage |
 | `restore` / `restore-ui` | Replacement semantics, undo snapshot, refusals |
-| `detail-view` | Stats, activity chart, live updates |
+| `detail-view` | Stats, activity chart, live updates, the hero header's three backdrop states |
 | `settings` | Validation, backups-root change, orphan cleanup |
 | `window-chrome` | Title bar, control hover states, fullscreen |
 | `sidebar-and-demo` | Sidebar collapse, sample-data seeder |
-| `metadata` | Three providers, credentials, search, apply, art upgrade, injection guards, the name combobox |
+| `metadata` | Three providers, credentials, search, apply, cover **and hero** art, injection guards, the name combobox |
+| `themes` | Four palettes, the picker, persistence, unknown-theme refusal, computed-colour proof |
 
 `test:e2e` needs a current build — run `npm run build` first. Each suite gets a
 freshly launched app with its own user-data directory, so suites cannot
@@ -495,6 +557,11 @@ Touch four places: `AppSettings` in `shared/types.ts`, `DEFAULT_SETTINGS` and
 `db/repositories/settings.ts`, and `validatePatch()` in
 `electron/ipc/settings.ts`. `sidebarCollapsed` is the worked example.
 
+A setting whose values are a **union** needs a fifth thing: enumerate it as
+`Record<Union, true>` in `shared/types.ts` with a type guard beside it, and have
+both the parser and `validatePatch()` call that guard rather than writing the
+list out twice. `ThemeId` / `isThemeId()` is the worked example.
+
 ## Sidebar
 
 The collapse control lives in the sidebar **header**, beside the logo. It was
@@ -505,8 +572,14 @@ restructure the layout visually prominent.
 ## Sample data
 
 `npm run dev` → Settings → Developer → **Add sample data**. Creates eight games
-with generated PNG covers, ~65 sessions across the last 30 days, real save
-folders and four snapshots. Safe to re-run; it skips games already present.
+with generated PNG covers **and wide hero art**, ~65 sessions across the last 30
+days, real save folders and four snapshots. Safe to re-run; it skips games
+already present.
+
+The hero is the same two colours as the cover **in the opposite order**, on
+purpose. Identical artwork in both slots would hide the bug where the detail
+header reads `coverImagePath` instead of `heroImagePath` — reversing the
+gradient makes that mistake obvious on screen instead of invisible.
 
 Dev-only in two independent ways: `import.meta.env.DEV` strips the UI from
 production builds, and the handler refuses when `app.isPackaged`.
@@ -531,10 +604,20 @@ Others, in rough priority order:
 - **`pre_restore` snapshots accumulate** — they are pinned so rotation never
   removes them. Deliberate (losing an undo is worse), but frequent restorers
   collect them.
-- **The light theme is not implemented.** `theme` exists in the schema but the
-  UI does not offer it and main rejects setting it: the UI uses Tailwind's
-  default `slate` text scale rather than semantic tokens, so flipping background
-  variables alone gives light-on-light text.
+- **There is no light theme, and `ThemeId` no longer contains one.** Four dark
+  palettes ship (Midnight / Nebula / Ember / Verdant). The blocker is no longer
+  the text scale — that was tokenised — but the status banners: `bg-red-950`,
+  `text-emerald-200` and `bg-amber-950` are fixed dark-mode colours outside every
+  ramp, so a light surface renders them dark-on-dark. Tokenising those is the
+  work a light theme needs. Installs that stored `theme = 'light'` before the
+  union changed fall back to `dark` on read, which `db/verify.ts` asserts.
+- **Themes change colour only** — not radii, spacing or layout density.
+- **Nothing back-fills hero art.** `hero_image_path` is written only when
+  metadata is applied, so a library matched before schema v4 shows the blurred
+  cover until each game is re-matched. A refresh action is the fix and still does
+  not exist — the same gap `metadata_id` was stored to close.
+- **Wide art cannot be set by hand.** No picker, and the field is deliberately
+  outside `NewGame`, so a game the providers do not carry can only fall back.
 - **A game launched outside LaunchPad is invisible** — the running-game checks
   rely on LaunchPad having spawned the process.
 - **Antivirus can block the spawn entirely.** Confirmed on the dev machine with

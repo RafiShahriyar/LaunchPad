@@ -28,8 +28,8 @@ export function ActivityChart({ gameId }: { gameId: number }) {
   return (
     <section>
       <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-sm font-semibold text-slate-200">Last 30 days</h2>
-        <span className="text-xs text-slate-500">
+        <h2 className="text-sm font-semibold text-content-200">Last 30 days</h2>
+        <span className="text-xs text-content-500">
           {total > 0 ? formatSessionDuration(total) : 'No activity'}
         </span>
       </div>
@@ -56,7 +56,7 @@ export function ActivityChart({ gameId }: { gameId: number }) {
         ))}
       </div>
 
-      <div className="mt-1.5 flex justify-between text-[10px] text-slate-600">
+      <div className="mt-1.5 flex justify-between text-[10px] text-content-600">
         <span>{days[0]?.label}</span>
         <span>Today</span>
       </div>

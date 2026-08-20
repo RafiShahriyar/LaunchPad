@@ -99,6 +99,96 @@ export async function run({ ev, reload, text, check, section, fixtures, app, del
   check('the badge clears when the game exits', !/Playing now/.test(rendered))
   check('the new session lands in history without a reload', /sessions/i.test(rendered) && /\b5\b/.test(rendered))
 
+  /*
+   * The backdrop has three states and they must be distinguishable on screen,
+   * not merely in the row. The failure this guards is the header quietly
+   * rendering the COVER as though it were wide key art -- which looks entirely
+   * plausible and is wrong -- so each state carries its own testid.
+   *
+   * Walked in order, because the interesting part is the transitions: this game
+   * starts with no artwork at all.
+   */
+  section('The header backdrop: no artwork')
+
+  check(
+    'a game with no artwork gets the plain gradient',
+    (await ev(`!!document.querySelector('[data-testid=hero-none]')`)) === true
+  )
+  check('and the absence is stated in words', /no artwork/i.test(await text()))
+
+  /*
+   * Asserted BEFORE anything is applied. `genres` is null here -- never looked
+   * up -- which must not read the same as a provider that listed none. Once
+   * apply runs below it becomes `[]` and the wording has to change.
+   */
+  section('The header distinguishes never-asked from nothing-found')
+
+  rendered = await text()
+  check('an unlooked-up game says so', /not looked up/i.test(rendered), rendered.slice(0, 260))
+  check('a missing release year is stated, not omitted', /year unknown/i.test(rendered))
+
+  const applied = await ev(
+    `window.api.metadata.apply(${gameId}, {id:'x',source:'rawg',name:'Detail Game',genres:[],releaseDate:null,summary:null,coverUrl:null,heroUrl:null}, {applyName:false,applyCover:false})`
+  )
+  check('apply with no artwork requested succeeds', applied?.ok === true, applied?.error)
+  check('and reports no hero', applied?.data?.heroImagePath === null)
+  check('nor a hero error, since none was asked for', applied?.data?.heroError === null)
+  // Applied over IPC, so the store has not seen it -- the same reload rule the
+  // grid assertions follow.
+  await reload()
+  await delay(900)
+  await ev(`document.querySelector('[aria-label="Open Detail Game"]').click()`)
+  await delay(1200)
+  check(
+    'a provider that listed no genres reads differently from never asking',
+    /none listed/i.test(await text())
+  )
+
+  section('The header backdrop: cover stands in for missing wide art')
+
+  await ev(
+    `window.api.games.update(${gameId}, { coverImagePath: '${fixtures.posix(fixtures.coverPng)}' })`
+  )
+  await reload()
+  await delay(900)
+  await ev(`document.querySelector('[aria-label="Open Detail Game"]').click()`)
+  await delay(1200)
+
+  check(
+    'the cover is used as a fallback wash',
+    (await ev(`!!document.querySelector('[data-testid=hero-fallback]')`)) === true
+  )
+  check(
+    'and the page does not claim to have wide art',
+    (await ev(`!!document.querySelector('[data-testid=hero-art]')`)) === false
+  )
+  check('the no-artwork notice is gone', !/no artwork/i.test(await text()))
+
+  section('The header backdrop: real wide art wins')
+
+  app.withDb((db) =>
+    db
+      .prepare('UPDATE games SET hero_image_path = ? WHERE id = ?')
+      .run(fixtures.posix(fixtures.coverPng), gameId)
+  )
+  await reload()
+  await delay(900)
+  await ev(`document.querySelector('[aria-label="Open Detail Game"]').click()`)
+  await delay(1200)
+
+  check(
+    'wide art is used when the game has it',
+    (await ev(`!!document.querySelector('[data-testid=hero-art]')`)) === true
+  )
+  check(
+    'the cover stops standing in',
+    (await ev(`!!document.querySelector('[data-testid=hero-fallback]')`)) === false
+  )
+  check(
+    'the cover thumbnail is still shown beside the title',
+    (await ev(`!!document.querySelector('[aria-label="View cover image full size"]')`)) === true
+  )
+
   section('Navigation back, and deleting the open game')
   await ev("[...document.querySelectorAll('button')].find(b => b.innerText.trim() === '← Library').click()")
   await delay(800)

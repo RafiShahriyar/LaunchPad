@@ -178,3 +178,27 @@ export async function resolveCoverUrl(result: MetadataSearchResult): Promise<str
   }
   return result.coverUrl
 }
+
+/**
+ * Picks the wide backdrop art to download, mirroring resolveCoverUrl.
+ *
+ * The preference order is the same and for the same reason: an art provider's
+ * hero is composed as a banner, with the subject off-centre and room for a
+ * title, while a metadata provider's wide image is a screenshot or a piece of
+ * concept art that merely happens to be landscape.
+ *
+ * Returning null is ordinary, not a failure. Hero coverage is thinner than box
+ * art even on SteamGridDB, and the detail page has a defined answer for a game
+ * with none.
+ */
+export async function resolveHeroUrl(result: MetadataSearchResult): Promise<string | null> {
+  const artProvider = activeArtProvider()
+  if (artProvider?.findHero) {
+    const values = storedValues(artProvider)
+    if (values) {
+      const wide = await artProvider.findHero(result.name, values)
+      if (wide) return wide
+    }
+  }
+  return result.heroUrl
+}

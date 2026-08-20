@@ -101,6 +101,16 @@ function verifyUpgradeFromV1(): void {
        VALUES (1, 'C:/old/backup', ?, 100, 2, 'manual')`
     )
     .run(iso())
+  /*
+   * Two settings, testing two different things.
+   *
+   * `max_backups_per_game` is an ordinary value and must survive the migration
+   * untouched. `theme = 'light'` is a value that USED to be part of the union
+   * and no longer is -- real installs from before the theme work can have it
+   * stored, so the parser's fallback is the thing standing between them and a
+   * settings object with a theme nothing can render.
+   */
+  legacy.prepare("INSERT INTO settings (key, value) VALUES ('max_backups_per_game', '7')").run()
   legacy.prepare("INSERT INTO settings (key, value) VALUES ('theme', 'light')").run()
   legacy.close()
 
@@ -111,7 +121,12 @@ function verifyUpgradeFromV1(): void {
   const games = gamesRepo.listGames()
   check('existing game survived the migration', games.length === 1 && games[0]?.name === 'Legacy Game')
   check('existing playtime preserved', games[0]?.totalPlaytimeSeconds === 7200)
-  check('existing settings preserved', settingsRepo.getSettings().theme === 'light')
+  check('existing settings preserved', settingsRepo.getSettings().maxBackupsPerGame === 7)
+  check(
+    'a theme that no longer exists degrades to the default rather than sticking',
+    settingsRepo.getSettings().theme === 'dark',
+    settingsRepo.getSettings().theme
+  )
 
   const backups = savesRepo.listBackupsForGame(1)
   check('existing backup row survived', backups.length === 1)
@@ -128,6 +143,11 @@ function verifyUpgradeFromV1(): void {
   // v3 columns: a game that predates the metadata feature has never been looked
   // up, which must read as null and NOT as an empty genre list.
   check('pre-metadata game reports unknown genres, not none', games[0]?.genres === null)
+
+  // v4: a game from before the hero column has no wide art. Null rather than
+  // the cover path, because "reuse the cover" is a rendering decision the
+  // detail page makes, not a fact about the row.
+  check('pre-hero game reports no wide art', games[0]?.heroImagePath === null)
   check('pre-metadata game has no source', games[0]?.metadataSource === null)
 
   closeDatabase()
@@ -242,6 +262,20 @@ function verifyUpgradeFromV2(): void {
   check('an empty genre list stays empty, not null', Array.isArray(emptied.genres) && emptied.genres.length === 0)
   check('a looked-up game is distinguishable from an unlooked-up one', emptied.genres !== null)
 
+  section('Hero art writes')
+  const withHero = gamesRepo.setHeroImagePath(1, 'C:/covers/1-abc123.jpg', iso(30))
+  check('hero path stored', withHero.heroImagePath === 'C:/covers/1-abc123.jpg')
+  check('hero write does not disturb the cover', withHero.coverImagePath === applied.coverImagePath)
+  check('hero write does not touch metadata', withHero.metadataId === '1029')
+  check('hero write does not touch playtime', withHero.totalPlaytimeSeconds === 3600)
+  check('hero write stamps updated_at', withHero.updatedAt === iso(30))
+
+  // Clearing is a real operation, not just an initial state: re-applying
+  // metadata for a game whose new match has no wide art must be able to say so.
+  const cleared = gamesRepo.setHeroImagePath(1, null, iso(40))
+  check('hero can be cleared back to null', cleared.heroImagePath === null)
+  check('clearing the hero leaves the cover alone', cleared.coverImagePath === applied.coverImagePath)
+
   closeDatabase()
   for (const suffix of ['', '-wal', '-shm']) rmSync(dbPath + suffix, { force: true })
 }
@@ -254,7 +288,19 @@ function main(): void {
   const init = initDatabase({ dbPath, defaultBackupsRoot: join(tmpdir(), 'lp-backups') })
   check('migrations applied to latest version', init.schemaVersion === LATEST_SCHEMA_VERSION)
   check('fresh database starts at version 0', init.migratedFrom === 0)
-  check('schema is at version 3 (game_metadata migration applied)', init.schemaVersion === 3)
+  /*
+   * Compared against LATEST_SCHEMA_VERSION rather than a literal.
+   *
+   * A hardcoded number here has to be edited on every migration, and the edit
+   * is trivially "make the test agree with the code" -- which is the shape of a
+   * check that stops meaning anything. What is worth asserting is that a fresh
+   * database lands on the newest version rather than part-way through the list.
+   */
+  check(
+    `a fresh database is fully migrated (v${LATEST_SCHEMA_VERSION})`,
+    init.schemaVersion === LATEST_SCHEMA_VERSION,
+    String(init.schemaVersion)
+  )
 
   section('Settings')
   const defaults = settingsRepo.getSettings()

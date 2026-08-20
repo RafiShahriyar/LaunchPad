@@ -59,4 +59,17 @@ export interface ArtProviderClient extends ProviderClient {
    * falls back to whatever image the metadata provider supplied.
    */
   findCover(name: string, values: Record<string, string>): Promise<string | null>
+  /**
+   * Finds wide key art for the detail page's backdrop.
+   *
+   * Optional, because "supplies art" does not imply "supplies both shapes" —
+   * a provider with only box art is still a useful art provider, and forcing it
+   * to return null from a required method would say nothing the absence does
+   * not already say.
+   *
+   * Same contract as findCover: null is an ordinary outcome, never an error.
+   * The caller falls back to the metadata provider's own wide image, and the
+   * page falls back to the cover after that.
+   */
+  findHero?(name: string, values: Record<string, string>): Promise<string | null>
 }

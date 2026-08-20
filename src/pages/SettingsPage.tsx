@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { fetchGames } from '@/store/slices/gamesSlice'
-import type { AppSettings } from '@shared/types'
+import type { AppSettings, ThemeId } from '@shared/types'
 import { Button } from '@/components/Modal'
 import { formatBytes } from '@/lib/format'
+import { THEMES } from '@/lib/themes'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { fetchBackupUsage } from '@/store/slices/savesSlice'
 import type { ProviderDescriptor } from '@shared/ipc'
@@ -38,8 +39,8 @@ export function SettingsPage() {
   if (!settings) {
     return (
       <div className="p-8">
-        <h1 className="text-2xl font-semibold text-slate-100">Settings</h1>
-        <p className="mt-4 text-sm text-slate-500">Loading…</p>
+        <h1 className="text-2xl font-semibold text-content-100">Settings</h1>
+        <p className="mt-4 text-sm text-content-500">Loading…</p>
       </div>
     )
   }
@@ -48,8 +49,8 @@ export function SettingsPage() {
 
   return (
     <div className="max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold text-slate-100">Settings</h1>
-      <p className="mt-1 text-sm text-slate-500">
+      <h1 className="text-2xl font-semibold text-content-100">Settings</h1>
+      <p className="mt-1 text-sm text-content-500">
         Changes save immediately. Values the app rejects are reported below the field.
       </p>
 
@@ -58,6 +59,15 @@ export function SettingsPage() {
           {saveError}
         </div>
       )}
+
+      <Section title="Appearance" description="How the app is coloured.">
+        <Field
+          label="Theme"
+          hint="Applies immediately and is remembered between sessions. Every theme is dark — see the docs for why a light one is not offered yet."
+        >
+          <ThemePicker value={settings.theme} onChange={(theme) => save({ theme })} />
+        </Field>
+      </Section>
 
       <Section title="Backups" description="Where snapshots live and how many are kept.">
         <Field
@@ -69,7 +79,7 @@ export function SettingsPage() {
               readOnly
               value={settings.backupsRootPath}
               aria-label="Backups folder"
-              className="w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 font-mono text-xs text-slate-300"
+              className="w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 font-mono text-xs text-content-300"
             />
             <Button
               className="shrink-0"
@@ -139,8 +149,8 @@ export function SettingsPage() {
         <div className="mt-4 rounded-xl border border-surface-700 bg-surface-900 p-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="mr-auto">
-              <p className="text-sm font-medium text-slate-200">Unreferenced backup folders</p>
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="text-sm font-medium text-content-200">Unreferenced backup folders</p>
+              <p className="mt-0.5 text-xs text-content-500">
                 Left behind when a game is deleted with “keep backups”. Nothing is removed until
                 you say so.
               </p>
@@ -164,7 +174,7 @@ export function SettingsPage() {
           )}
 
           {orphanScan && orphanScan.folders.length === 0 && (
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 text-xs text-content-500">
               Nothing unreferenced in {orphanScan.scannedRoot}
             </p>
           )}
@@ -178,16 +188,16 @@ export function SettingsPage() {
                     className="flex items-center gap-3 rounded-lg border border-surface-700 bg-surface-850 px-3 py-2"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs text-slate-300" title={folder.path}>
+                      <p className="truncate text-xs text-content-300" title={folder.path}>
                         {folder.label}
                       </p>
-                      <p className="text-[11px] text-slate-600">
+                      <p className="text-[11px] text-content-600">
                         {folder.reason === 'deleted_game'
                           ? 'Game no longer in your library'
                           : 'Snapshot not referenced by any record'}
                       </p>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-400">
+                    <span className="shrink-0 text-xs text-content-400">
                       {formatBytes(folder.sizeBytes)}
                     </span>
                   </li>
@@ -195,7 +205,7 @@ export function SettingsPage() {
               </ul>
 
               <div className="mt-3 flex items-center gap-3">
-                <span className="mr-auto text-xs text-slate-400">
+                <span className="mr-auto text-xs text-content-400">
                   {orphanScan.folders.length} folder
                   {orphanScan.folders.length === 1 ? '' : 's'} ·{' '}
                   {formatBytes(orphanScan.totalBytes)} reclaimable
@@ -234,8 +244,8 @@ export function SettingsPage() {
               ['User data', appInfo.userDataPath]
             ].map(([label, value]) => (
               <div key={label} className="contents">
-                <dt className="text-slate-500">{label}</dt>
-                <dd className="truncate font-mono text-xs text-slate-300" title={value}>
+                <dt className="text-content-500">{label}</dt>
+                <dd className="truncate font-mono text-xs text-content-300" title={value}>
                   {value}
                 </dd>
               </div>
@@ -244,7 +254,7 @@ export function SettingsPage() {
         )}
       </Section>
 
-      <p className="mt-8 text-xs text-slate-600">
+      <p className="mt-8 text-xs text-content-600">
         {saveStatus === 'loading' ? 'Saving…' : 'All changes saved automatically.'}
       </p>
     </div>
@@ -295,25 +305,25 @@ function MetadataSection() {
         infer it from the results.
       */}
       {activeName ? (
-        <p className="text-sm text-slate-300">
-          Searches use <span className="text-slate-100">{activeName}</span>
-          <span className="text-slate-500">
+        <p className="text-sm text-content-300">
+          Searches use <span className="text-content-100">{activeName}</span>
+          <span className="text-content-500">
             {status?.artConfigured
               ? ' · covers upgraded to portrait box art'
               : ' · covers come from the same source'}
           </span>
         </p>
       ) : (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-content-400">
           No provider configured. Game info search is unavailable until you add one below.
         </p>
       )}
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-content-500">
           Metadata — genres, descriptions, dates
         </h3>
-        <p className="mb-3 text-xs text-slate-600">
+        <p className="mb-3 text-xs text-content-600">
           Configure one. If both are set, the first listed is used.
         </p>
         <div className="flex flex-col gap-4">
@@ -324,10 +334,10 @@ function MetadataSection() {
       </div>
 
       <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-content-500">
           Cover art
         </h3>
-        <p className="mb-3 text-xs text-slate-600">
+        <p className="mb-3 text-xs text-content-600">
           Optional. The library grid draws portrait 3:4 cards, and most catalogue APIs return
           landscape screenshots that crop badly into that shape.
         </p>
@@ -377,10 +387,10 @@ function ProviderCard({ provider }: { provider: ProviderDescriptor }) {
     <div className="rounded-lg border border-surface-700 bg-surface-900/40 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-200">{provider.name}</p>
-          <p className="mt-0.5 text-xs text-slate-500">{provider.blurb}</p>
-          <p className="mt-1 break-all text-xs text-slate-600">
-            Get a key at <span className="text-slate-500">{provider.signupUrl}</span>
+          <p className="text-sm font-medium text-content-200">{provider.name}</p>
+          <p className="mt-0.5 text-xs text-content-500">{provider.blurb}</p>
+          <p className="mt-1 break-all text-xs text-content-600">
+            Get a key at <span className="text-content-500">{provider.signupUrl}</span>
           </p>
         </div>
         {configured && (
@@ -444,7 +454,7 @@ function ProviderCard({ provider }: { provider: ProviderDescriptor }) {
 }
 
 const settingsInputClass =
-  'w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent-500 focus:outline-none'
+  'w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-content-200 placeholder:text-content-600 focus:border-accent-500 focus:outline-none'
 
 function DeveloperSection() {
   const dispatch = useAppDispatch()
@@ -478,8 +488,8 @@ function DeveloperSection() {
     >
       <div className="flex flex-wrap items-center gap-3">
         <div className="mr-auto">
-          <p className="text-sm font-medium text-slate-300">Sample library</p>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="text-sm font-medium text-content-300">Sample library</p>
+          <p className="mt-0.5 text-xs text-content-500">
             Adds eight games with cover art, session history across the last 30 days, and real
             save folders you can back up and restore. Existing games are left untouched.
           </p>
@@ -490,11 +500,85 @@ function DeveloperSection() {
       </div>
 
       {result && (
-        <p className="rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-xs text-slate-300">
+        <p className="rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-xs text-content-300">
           {result}
         </p>
       )}
     </Section>
+  )
+}
+
+/**
+ * Theme swatches that paint themselves in the palette they represent.
+ *
+ * Each preview is wrapped in `data-theme`, so the ordinary `bg-surface-*` /
+ * `text-content-*` / `bg-accent-*` utilities inside it resolve to THAT theme's
+ * values -- the same mechanism the whole app uses, just scoped to a 64px box.
+ * Nothing here knows a single hex code, which is what stops the picker drifting
+ * from the palettes the moment one is tweaked.
+ *
+ * The preview is a miniature of the actual layout (dark rail, content pane, two
+ * text weights, one accent control) rather than three colour chips, because
+ * what a user is choosing between is how the APP looks, and the ratio of the
+ * colours is most of that.
+ */
+function ThemePicker({
+  value,
+  onChange
+}: {
+  value: ThemeId
+  onChange: (theme: ThemeId) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {THEMES.map((theme) => {
+        const selected = theme.id === value
+        return (
+          <button
+            key={theme.id}
+            type="button"
+            onClick={() => onChange(theme.id)}
+            aria-pressed={selected}
+            aria-label={`Use the ${theme.label} theme`}
+            data-testid={`theme-${theme.id}`}
+            className={`rounded-lg border p-2 text-left transition ${
+              selected
+                ? 'border-accent-500 ring-1 ring-accent-500'
+                : 'border-surface-700 hover:border-surface-600'
+            }`}
+          >
+            <div
+              data-theme={theme.id}
+              className="flex h-16 overflow-hidden rounded-md border border-surface-700 bg-surface-900"
+            >
+              <div className="w-1/5 border-r border-surface-700 bg-surface-950" />
+              <div className="flex flex-1 flex-col justify-center gap-1.5 p-2">
+                <div className="h-1.5 w-3/4 rounded-full bg-content-300" />
+                <div className="h-1.5 w-1/2 rounded-full bg-content-600" />
+                <div className="mt-0.5 h-2.5 w-2/5 rounded-full bg-accent-500" />
+              </div>
+            </div>
+
+            <span className="mt-2 flex items-center gap-1.5">
+              <span className="text-xs font-medium text-content-200">{theme.label}</span>
+              {/*
+                * Stated in words, not signalled only by the ring. Which of four
+                * similar-looking dark swatches is active is exactly the thing a
+                * colour-only cue fails to answer.
+                */}
+              {selected && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-400">
+                  Active
+                </span>
+              )}
+            </span>
+            <span className="mt-0.5 block text-[11px] leading-snug text-content-500">
+              {theme.description}
+            </span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -509,8 +593,8 @@ function Section({
 }) {
   return (
     <section className="mt-8 rounded-xl border border-surface-700 bg-surface-850 p-6">
-      <h2 className="text-sm font-semibold text-slate-200">{title}</h2>
-      <p className="mt-0.5 mb-5 text-xs text-slate-500">{description}</p>
+      <h2 className="text-sm font-semibold text-content-200">{title}</h2>
+      <p className="mt-0.5 mb-5 text-xs text-content-500">{description}</p>
       <div className="flex flex-col gap-5">{children}</div>
     </section>
   )
@@ -527,9 +611,9 @@ function Field({
 }) {
   return (
     <div>
-      <span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-content-300">{label}</span>
       {children}
-      {hint && <span className="mt-1.5 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-xs text-content-500">{hint}</span>}
     </div>
   )
 }
@@ -584,7 +668,7 @@ function NumberField({
         onKeyDown={(event) => {
           if (event.key === 'Enter') event.currentTarget.blur()
         }}
-        className="w-32 rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-slate-200 focus:border-accent-500 focus:outline-none"
+        className="w-32 rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-content-200 focus:border-accent-500 focus:outline-none"
       />
     </Field>
   )
@@ -611,8 +695,8 @@ function ToggleField({
         className="mt-0.5 h-4 w-4 accent-accent-500"
       />
       <span>
-        <span className="block text-sm font-medium text-slate-300">{label}</span>
-        <span className="mt-0.5 block text-xs text-slate-500">{hint}</span>
+        <span className="block text-sm font-medium text-content-300">{label}</span>
+        <span className="mt-0.5 block text-xs text-content-500">{hint}</span>
       </span>
     </label>
   )
@@ -621,8 +705,8 @@ function ToggleField({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-surface-700 bg-surface-900 px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-100">{value}</p>
+      <p className="text-[11px] uppercase tracking-wide text-content-500">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-content-100">{value}</p>
     </div>
   )
 }

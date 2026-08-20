@@ -15,7 +15,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win",
-    "verify:db": "esbuild db/verify.ts --bundle --platform=node --format=cjs --log-level=warning --outfile=out/verify/db.cjs && node out/verify/db.cjs",
+    "verify:db": "esbuild db/verify.ts --bundle --platform=node --format=cjs --tsconfig=tsconfig.node.json --log-level=warning --outfile=out/verify/db.cjs && node out/verify/db.cjs",
     "test:e2e": "node tests/run.mjs",
     "test": "npm run verify:db && npm run test:e2e"
   },

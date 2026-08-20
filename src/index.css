@@ -4,6 +4,32 @@
  * Tailwind v4 is configured in CSS rather than a tailwind.config.js file.
  * Design tokens declared in @theme become real utilities: `--color-surface-800`
  * generates `bg-surface-800`, `text-surface-800`, `border-surface-800`, etc.
+ *
+ * THEMING
+ * -------
+ * Tailwind v4 compiles `bg-surface-900` to `background-color:
+ * var(--color-surface-900)` -- a live custom-property reference, not an inlined
+ * hex. That is what makes themes switchable at runtime: redefining the variable
+ * under a `[data-theme]` selector re-colours every utility built from it, with
+ * no rebuild and no class churn in the components.
+ *
+ * The values below ARE the `dark` theme, not a neutral base. Declaring the
+ * default theme's values here rather than in a `[data-theme='dark']` block means
+ * the first paint is already correct -- before React has mounted, read the
+ * setting, or set the attribute. Without that the window flashes unstyled on
+ * every start.
+ *
+ * Three ramps, and every themed colour belongs to one of them:
+ *   surface-*  backgrounds, from the window base (950) up to raised edges (600)
+ *   content-*  text, from primary (100) down to faintest (700)
+ *   accent-*   the one interactive hue: primary buttons, links, focus rings
+ *
+ * `content-*` is a lightness ramp rather than semantic names (`fg-primary`,
+ * `fg-muted`). That is deliberate. Retrofitting semantics onto 152 existing
+ * call sites would mean judging the intent of each one, and getting some wrong
+ * silently. A ramp maps 1:1 onto what the code already expressed, so the
+ * migration was mechanical and reviewable -- and a theme still gets to define
+ * all seven steps however it likes.
  */
 @theme {
   --color-surface-950: #070a12;
@@ -13,11 +39,144 @@
   --color-surface-700: #1f2839;
   --color-surface-600: #2b364b;
 
+  --color-content-100: #f1f5f9;
+  --color-content-200: #e2e8f0;
+  --color-content-300: #cbd5e1;
+  --color-content-400: #94a3b8;
+  --color-content-500: #64748b;
+  --color-content-600: #475569;
+  --color-content-700: #334155;
+
   --color-accent-400: #60a5fa;
   --color-accent-500: #3b82f6;
   --color-accent-600: #2563eb;
 
   --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+/*
+ * The alternative themes.
+ *
+ * The selector is `[data-theme=...]`, deliberately NOT `:root[data-theme=...]`.
+ *
+ * Two reasons. Tailwind v4 emits its `@theme` variables inside `@layer theme`,
+ * and these blocks are unlayered -- unlayered styles beat every layered style
+ * regardless of specificity, so the override is decided by the cascade's layer
+ * rules rather than by a specificity race that source order could flip.
+ *
+ * More importantly, `:root` matches only <html>. An unanchored attribute
+ * selector also matches a nested element, which is what lets the settings
+ * screen preview a palette by wrapping a swatch in `<div data-theme='ember'>`
+ * and letting the ordinary `bg-surface-*` utilities resolve to THAT theme's
+ * values. The alternative -- listing the hexes again in TypeScript -- is a
+ * second copy that silently drifts the first time a colour is tweaked.
+ *
+ * Note what is NOT here: `light`. Status banners (bg-red-950, text-emerald-200,
+ * bg-amber-950) are fixed dark-mode colours and are not part of any ramp, so a
+ * light surface would render them as dark-on-dark. Shipping a light theme means
+ * tokenising those first. It is absent rather than present-and-broken, which is
+ * the same call `theme` has carried since it was first added.
+ */
+
+/*
+ * Midnight -- the original palette, and the default.
+ *
+ * These values repeat the @theme block above, which is unavoidable rather than
+ * careless. @theme has to declare every token or Tailwind generates no utility
+ * for it at all, and its values are what paints the window before React has
+ * read the setting. But `:root`-level values cannot serve a NESTED preview: with
+ * `data-theme='nebula'` on <html>, a dark swatch inside it needs somewhere to
+ * reset to, and `var(--color-surface-900)` at that point already means nebula's.
+ *
+ * The two copies must stay in step. `tests/suites/themes.mjs` asserts it rather
+ * than trusting a comment -- it reads the computed colour under each theme and
+ * fails if dark and the default disagree.
+ */
+[data-theme='dark'] {
+  --color-surface-950: #070a12;
+  --color-surface-900: #0b0f19;
+  --color-surface-850: #111725;
+  --color-surface-800: #161d2e;
+  --color-surface-700: #1f2839;
+  --color-surface-600: #2b364b;
+
+  --color-content-100: #f1f5f9;
+  --color-content-200: #e2e8f0;
+  --color-content-300: #cbd5e1;
+  --color-content-400: #94a3b8;
+  --color-content-500: #64748b;
+  --color-content-600: #475569;
+  --color-content-700: #334155;
+
+  --color-accent-400: #60a5fa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+}
+
+/* Nebula -- violet on neutral near-black. */
+[data-theme='nebula'] {
+  --color-surface-950: #060608;
+  --color-surface-900: #0c0c10;
+  --color-surface-850: #121218;
+  --color-surface-800: #18181f;
+  --color-surface-700: #232330;
+  --color-surface-600: #32323f;
+
+  --color-content-100: #fafafa;
+  --color-content-200: #e4e4e7;
+  --color-content-300: #d4d4d8;
+  --color-content-400: #a1a1aa;
+  --color-content-500: #71717a;
+  --color-content-600: #52525b;
+  --color-content-700: #3f3f46;
+
+  --color-accent-400: #a78bfa;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+}
+
+/* Ember -- warm charcoal, orange accent. */
+[data-theme='ember'] {
+  --color-surface-950: #0a0705;
+  --color-surface-900: #120d0a;
+  --color-surface-850: #1a1310;
+  --color-surface-800: #221915;
+  --color-surface-700: #2f231d;
+  --color-surface-600: #40312a;
+
+  --color-content-100: #fafaf9;
+  --color-content-200: #e7e5e4;
+  --color-content-300: #d6d3d1;
+  --color-content-400: #a8a29e;
+  --color-content-500: #78716c;
+  --color-content-600: #57534e;
+  --color-content-700: #44403c;
+
+  --color-accent-400: #fb923c;
+  --color-accent-500: #f97316;
+  --color-accent-600: #ea580c;
+}
+
+/* Verdant -- teal on deep green-black. */
+[data-theme='verdant'] {
+  --color-surface-950: #04090a;
+  --color-surface-900: #071312;
+  --color-surface-850: #0c1b1a;
+  --color-surface-800: #102422;
+  --color-surface-700: #17322f;
+  --color-surface-600: #22443f;
+
+  --color-content-100: #f0fdfa;
+  --color-content-200: #ccfbf1;
+  --color-content-300: #bcd6d2;
+  --color-content-400: #8fa9a5;
+  --color-content-500: #6b8582;
+  --color-content-600: #4b625f;
+  --color-content-700: #384a48;
+
+  --color-accent-400: #2dd4bf;
+  --color-accent-500: #14b8a6;
+  --color-accent-600: #0d9488;
 }
 
 html,
@@ -27,7 +186,7 @@ body,
 }
 
 body {
-  @apply bg-surface-900 text-slate-200 antialiased;
+  @apply bg-surface-900 text-content-200 antialiased;
   /* The window chrome is dark; prevent a white overscroll gutter. */
   overscroll-behavior: none;
 }
@@ -49,7 +208,8 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Scrollbars default to light-on-light in Chromium and look broken on a dark app. */
+/* Scrollbars default to light-on-light in Chromium and look broken on a dark
+   app. Reading the token rather than a literal keeps them themed for free. */
 * {
   scrollbar-color: var(--color-surface-600) transparent;
   scrollbar-width: thin;

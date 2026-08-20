@@ -18,7 +18,11 @@ const REJECTIONS = [
   ['negative session minimum', '{minSessionSeconds: -1}', /negative/i],
   ['hour-long session minimum', '{minSessionSeconds: 99999}', /longer than an hour/i],
   ['empty backups path', "{backupsRootPath: '   '}", /cannot be empty/i],
-  ['non-boolean toggle', "{backupBeforeLaunch: 'yes'}", /boolean/i]
+  ['non-boolean toggle', "{backupBeforeLaunch: 'yes'}", /boolean/i],
+  // 'light' was a member of the theme union once and is not any more, so this
+  // doubles as the check that a removed value cannot be written back in.
+  ['retired theme', "{theme: 'light'}", /unknown theme/i],
+  ['nonexistent theme', "{theme: 'chartreuse'}", /unknown theme/i]
 ]
 
 export async function run({ ev, check, section, fixtures, app }) {
@@ -49,9 +53,18 @@ export async function run({ ev, check, section, fixtures, app }) {
   }
   check('a rejected update changed nothing', (await ev('window.api.settings.get()'))?.data?.maxBackupsPerGame === 3)
 
-  section('Theme is not accepted while unimplemented')
-  result = await ev("window.api.settings.update({theme: 'light'})")
-  check('theme ignored rather than persisted', result?.ok === true && result.data.theme === 'dark', result?.data)
+  /*
+   * Theme used to be dropped silently -- update() returned ok with the value
+   * unchanged, because no palette existed to honour it. It is a real setting
+   * now, so it validates and persists like every other one. The palettes
+   * themselves are covered in suites/themes.mjs; this is only the settings
+   * contract.
+   */
+  section('Theme persists like any other setting')
+  result = await ev("window.api.settings.update({theme: 'nebula'})")
+  check('a valid theme is accepted', result?.ok === true && result.data.theme === 'nebula', result?.data)
+  check('and survives a re-read', (await ev('window.api.settings.get()'))?.data?.theme === 'nebula')
+  await ev("window.api.settings.update({theme: 'dark'})")
 
   section('Backups keep working after the root moves')
   const made = await ev(
