@@ -70,6 +70,7 @@ One row per game in the library.
 | `launch_args` | TEXT NULL | Extra CLI args, stored as one string |
 | `save_folder_path` | TEXT NULL | **NULL disables backups for this game** |
 | `cover_image_path` | TEXT NULL | Absolute path on disk; NULL renders a placeholder |
+| `hero_image_path` | TEXT | Wide key art for the detail backdrop, or NULL. Separate from `cover_image_path` because the two are different shapes with different jobs — portrait 3:4 for the grid card, roughly 16:6 drawn full-bleed behind text — and a game can legitimately have one without the other. Lives in the same managed covers folder, so it is served by the same `lpasset://` handler and swept by the same prefix match on delete. |
 | `genres` | TEXT NULL | JSON array of strings (schema v3). **NULL and `[]` differ** — see below |
 | `summary` | TEXT NULL | Provider description (schema v3) |
 | `release_date` | TEXT NULL | `YYYY-MM-DD` (schema v3), not a timestamp |
@@ -225,7 +226,7 @@ typed shape lives in `AppSettings` in `shared/types.ts`.
 | `backup_before_launch` | `true` | Snapshot automatically before each launch |
 | `backup_after_session` | `true` | Snapshot automatically after each session |
 | `min_session_seconds` | `30` | Sessions shorter than this are discarded |
-| `theme` | `dark` | UI theme |
+| `theme` | `dark` | Colour palette — one of `dark`, `nebula`, `ember`, `verdant`. Validated by `isThemeId()` on **both** write and read, so a value that is no longer a valid theme (an install that stored the long-removed `light`) falls back to the default instead of propagating. |
 | `sidebar_collapsed` | `false` | Sidebar collapsed to icons only |
 
 Further keys live in this table but are **not** part of `AppSettings` and are
@@ -365,6 +366,7 @@ while silently diverging their schema from a fresh install's.
 | 1 | `initial_schema` | The four tables and three indexes above |
 | 2 | `backup_content_hash` | Adds `save_backups.content_hash` for backup deduplication |
 | 3 | `game_metadata` | Adds six nullable `games` columns for provider metadata and its provenance |
+| 4 | `game_hero_art` | Adds `games.hero_image_path` for the detail page's wide backdrop |
 
 `db/verify.ts` includes upgrade tests that build a **v1 database and a v2
 database by hand** and migrate each, asserting games, playtime, settings, backup
@@ -375,6 +377,14 @@ schema by hand rather than trusting the migration list is what makes these
 genuine upgrade tests rather than fresh-install tests -- and
 migrations are the one thing that cannot be fixed after release, because user
 data has already passed through them.
+
+The v1 test also covers a value that has been **removed** from a union rather
+than added to one: it stores `theme = 'light'`, which was a valid theme once and
+is not any more, and asserts the settings parser falls back to the default. A
+migration that only ever adds columns still has to answer for values written by
+older builds. The same test asserts a pre-v4 game reports `hero_image_path` as
+NULL rather than inheriting its cover — "use the cover instead" is a rendering
+decision the detail page makes, not a fact worth writing into the row.
 
 ## node:sqlite quirks the code works around
 

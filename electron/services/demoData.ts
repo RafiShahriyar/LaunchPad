@@ -148,6 +148,19 @@ export async function seedDemoData(): Promise<DemoDataResult> {
     const coverPath = join(gameDir, 'cover.png')
     writeFileSync(coverPath, makeGradientPng(300, 400, demo.colors[0], demo.colors[1]))
 
+    /*
+     * A wide companion image, so the detail page's backdrop has something real
+     * to draw and the fallback path is not the only one anyone ever sees.
+     *
+     * Deliberately the SAME two colours in the opposite order. Identical
+     * artwork in both slots would hide the bug where the header reads the cover
+     * instead of the hero, which is exactly the mistake this seeder should make
+     * visible -- reversing the gradient makes the two instantly distinguishable
+     * on screen.
+     */
+    const heroPath = join(gameDir, 'hero.png')
+    writeFileSync(heroPath, makeGradientPng(960, 360, demo.colors[1], demo.colors[0]))
+
     // Deterministic pseudo-randomness keyed off the name, so repeated seeds on
     // different machines produce the same believable spread.
     let seed = [...demo.name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
@@ -176,6 +189,9 @@ export async function seedDemoData(): Promise<DemoDataResult> {
      * too; importCover's <gameId>-<hash> naming avoids both problems.
      */
     gamesRepo.updateGame(game.id, { coverImagePath: importCover(coverPath, game.id) }, createdAt)
+    // Same rule for the hero: it is served by the same lpasset:// handler, so
+    // it has to be imported into the managed folder rather than referenced.
+    gamesRepo.setHeroImagePath(game.id, importCover(heroPath, game.id), createdAt)
     gamesCreated++
 
     // Sessions spread over the last 30 days so the activity chart has shape.

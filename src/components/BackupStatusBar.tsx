@@ -32,7 +32,7 @@ export function BackupStatusBar() {
 
   const tones = {
     success: 'border-emerald-900 bg-emerald-950/60 text-emerald-200',
-    info: 'border-surface-600 bg-surface-800 text-slate-300',
+    info: 'border-surface-600 bg-surface-800 text-content-300',
     error: 'border-red-900 bg-red-950/60 text-red-200'
   }
 

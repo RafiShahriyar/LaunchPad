@@ -85,6 +85,18 @@ function mapResult(raw: RawgGame): { result: MetadataSearchResult; thumbUrl: str
       // one entry the user picks, rather than for all twelve.
       summary: null,
       coverUrl,
+      /*
+       * The same image as the cover, and that is not a mistake.
+       *
+       * RAWG's `background_image` IS a landscape screenshot -- its unsuitability
+       * as a 3:4 card is exactly why SteamGridDB exists in this project. As a
+       * wide backdrop it is the right shape, so the field that makes a poor
+       * cover makes a perfectly good hero, at zero extra cost.
+       *
+       * When SteamGridDB is configured its hero wins at apply time anyway; this
+       * is what a RAWG-only setup falls back to.
+       */
+      heroUrl: coverUrl,
       thumbnailDataUri: null
     },
     thumbUrl: toThumbUrl(coverUrl)

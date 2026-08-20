@@ -28,6 +28,16 @@ const NAME = 'SteamGridDB'
  */
 const PORTRAIT_DIMENSIONS = '600x900,342x482,660x930'
 
+/**
+ * Wide shapes, largest first.
+ *
+ * 1920x620 is SteamGridDB's standard hero and by far the best populated; the
+ * 3840 variant is the same art at 2x for high-DPI displays. Listing landscape
+ * dimensions explicitly matters for the same reason it does above — the default
+ * response would be full of portrait grids that cannot be used as a backdrop.
+ */
+const HERO_DIMENSIONS = '3840x1240,1920x620,1600x650'
+
 function authHeaders(values: Record<string, string>): Record<string, string> {
   return {
     Authorization: `Bearer ${values.apiKey ?? ''}`,
@@ -88,33 +98,67 @@ export const steamGridDb: ArtProviderClient = {
    * it cannot be had, the caller keeps the metadata provider's image and the
    * apply still succeeds.
    */
-  async findCover(name, values) {
-    try {
-      await throttle()
-      const search = await getJson(
-        `${API_BASE}/search/autocomplete/${encodeURIComponent(name)}`,
-        { headers: authHeaders(values) },
-        NAME
-      )
-      if (search.status !== 200 || search.body === null) return null
+  findCover(name, values) {
+    return findArt('grids', PORTRAIT_DIMENSIONS, name, values)
+  },
 
-      const data = (search.body as { data?: unknown }).data
-      if (!Array.isArray(data) || data.length === 0) return null
+  /**
+   * The same two requests against the `heroes` endpoint.
+   *
+   * Heroes are the reason this provider is worth a second call at all: RAWG and
+   * IGDB both hand back a wide image, but theirs is a screenshot or a piece of
+   * concept art, while SteamGridDB's heroes are composed for exactly this use —
+   * a banner with the focal point off to one side and room for text over it.
+   *
+   * Coverage is thinner than for grids, so null is common and expected. The
+   * caller falls back to the metadata provider's wide image.
+   */
+  findHero(name, values) {
+    return findArt('heroes', HERO_DIMENSIONS, name, values)
+  }
+}
 
-      const gameId = (data[0] as { id?: unknown }).id
-      if (typeof gameId !== 'number' && typeof gameId !== 'string') return null
+/**
+ * Resolves a name to a SteamGridDB game id, then returns the first usable image
+ * of the requested kind.
+ *
+ * Shared by findCover and findHero because the id lookup is identical and
+ * duplicating it would mean two places to keep the failure handling consistent.
+ * Each call still pays for its own resolution: caching it across the two would
+ * save one request per apply while adding a cache to invalidate, and apply is
+ * not a hot path.
+ */
+async function findArt(
+  kind: 'grids' | 'heroes',
+  dimensions: string,
+  name: string,
+  values: Record<string, string>
+): Promise<string | null> {
+  try {
+    await throttle()
+    const search = await getJson(
+      `${API_BASE}/search/autocomplete/${encodeURIComponent(name)}`,
+      { headers: authHeaders(values) },
+      NAME
+    )
+    if (search.status !== 200 || search.body === null) return null
 
-      await throttle()
-      const grids = await getJson(
-        `${API_BASE}/grids/game/${encodeURIComponent(String(gameId))}?dimensions=${PORTRAIT_DIMENSIONS}&types=static`,
-        { headers: authHeaders(values) },
-        NAME
-      )
-      if (grids.status !== 200 || grids.body === null) return null
+    const data = (search.body as { data?: unknown }).data
+    if (!Array.isArray(data) || data.length === 0) return null
 
-      return firstUrl(grids.body)
-    } catch {
-      return null
-    }
+    const gameId = (data[0] as { id?: unknown }).id
+    if (typeof gameId !== 'number' && typeof gameId !== 'string') return null
+
+    await throttle()
+    const art = await getJson(
+      `${API_BASE}/${kind}/game/${encodeURIComponent(String(gameId))}?dimensions=${dimensions}&types=static`,
+      { headers: authHeaders(values) },
+      NAME
+    )
+    if (art.status !== 200 || art.body === null) return null
+
+    return firstUrl(art.body)
+  } catch {
+    return null
   }
 }

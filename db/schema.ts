@@ -124,6 +124,29 @@ const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE games ADD COLUMN metadata_id TEXT;
       ALTER TABLE games ADD COLUMN metadata_updated_at TEXT;
     `
+  },
+  {
+    version: 4,
+    name: 'game_hero_art',
+    up: `
+      -- Wide key art for the detail page's backdrop, kept separate from
+      -- cover_image_path because the two are different shapes with different
+      -- jobs: the cover is portrait 3:4 for the grid, the hero is roughly 16:6
+      -- and only ever drawn full-bleed behind text.
+      --
+      -- One column rather than reusing cover_image_path, because a game can
+      -- legitimately have one and not the other -- SteamGridDB carries grids for
+      -- far more titles than it carries heroes -- and collapsing them would mean
+      -- either stretching box art across the header or leaving the grid card
+      -- empty. NULL means "no wide art", which the detail page states rather
+      -- than papers over.
+      --
+      -- The file lives in the same managed covers folder as cover art: it is
+      -- served by the same lpasset:// handler, swept by the same
+      -- deleteCoversForGame() prefix match, and subject to the same download
+      -- guards. A second directory would have duplicated all three.
+      ALTER TABLE games ADD COLUMN hero_image_path TEXT;
+    `
   }
 ]
 

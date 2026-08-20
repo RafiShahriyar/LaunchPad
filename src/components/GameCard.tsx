@@ -61,10 +61,10 @@ export function GameCard({ game }: { game: Game }) {
       </div>
 
       <div className="px-3 pt-3">
-        <h3 className="truncate text-sm font-medium text-slate-100" title={game.name}>
+        <h3 className="truncate text-sm font-medium text-content-100" title={game.name}>
           {game.name}
         </h3>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-content-500">
           {formatPlaytime(game.totalPlaytimeSeconds)}
           {game.lastPlayedAt && ` · ${formatRelativeDate(game.lastPlayedAt)}`}
         </p>
@@ -165,8 +165,8 @@ function IconButton({
         event.stopPropagation()
         onClick()
       }}
-      className={`grid h-7 w-7 place-items-center rounded-md bg-surface-900/90 text-xs backdrop-blur transition-colors disabled:cursor-not-allowed disabled:text-slate-600 ${
-        danger ? 'text-slate-300 hover:bg-red-600 hover:text-white' : 'text-slate-300 hover:bg-surface-700'
+      className={`grid h-7 w-7 place-items-center rounded-md bg-surface-900/90 text-xs backdrop-blur transition-colors disabled:cursor-not-allowed disabled:text-content-600 ${
+        danger ? 'text-content-300 hover:bg-red-600 hover:text-white' : 'text-content-300 hover:bg-surface-700'
       }`}
     >
       {children}
@@ -196,14 +196,14 @@ export function GameRow({ game }: { game: Game }) {
         aria-label={`Open ${game.name}`}
         className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
       >
-        <h3 className="truncate text-sm font-medium text-slate-100">{game.name}</h3>
-        <p className="truncate font-mono text-[11px] text-slate-600">{game.executablePath}</p>
+        <h3 className="truncate text-sm font-medium text-content-100">{game.name}</h3>
+        <p className="truncate font-mono text-[11px] text-content-600">{game.executablePath}</p>
       </button>
 
-      <div className="w-28 shrink-0 text-right text-xs text-slate-400">
+      <div className="w-28 shrink-0 text-right text-xs text-content-400">
         {formatPlaytime(game.totalPlaytimeSeconds)}
       </div>
-      <div className="w-24 shrink-0 text-right text-xs text-slate-500">
+      <div className="w-24 shrink-0 text-right text-xs text-content-500">
         {formatRelativeDate(game.lastPlayedAt)}
       </div>
       <div className="w-24 shrink-0">

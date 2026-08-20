@@ -27,6 +27,20 @@ const PNG_B = Buffer.from(
   'base64'
 )
 
+/**
+ * A 2x1 PNG, standing in for wide key art.
+ *
+ * Distinct bytes matter here, not just a distinct URL: managed artwork is named
+ * by a hash of its CONTENT, so a stub serving the same pixels for the grid and
+ * the hero would collapse them into one file and make "cover and hero are
+ * different images" untestable. Being genuinely landscape is a bonus that keeps
+ * the fixture honest about what it represents.
+ */
+const PNG_WIDE = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGOI0lgQpbEAAAdpAkU2M6luAAAAAElFTkSuQmCC',
+  'base64'
+)
+
 const IGDB_GAMES = [
   {
     id: 1029,
@@ -34,7 +48,9 @@ const IGDB_GAMES = [
     summary: 'A bug knight explores a ruined kingdom.',
     first_release_date: 1487894400, // 2017-02-24 UTC
     genres: [{ name: 'Platform' }, { name: 'Adventure' }],
-    cover: { image_id: 'co1rbi' }
+    cover: { image_id: 'co1rbi' },
+    // Wide key art. IGDB returns a list here, unlike the single `cover` object.
+    artworks: [{ image_id: 'ar9zzz' }]
   }
 ]
 
@@ -61,9 +77,17 @@ const RAWG_GAMES = [
 let server = null
 let tokenRequests = 0
 let lastIgdbBody = ''
-let lastImagePath = null
+/**
+ * Every image path the app has fetched, in order.
+ *
+ * An array rather than a single `last`, because one apply now downloads two
+ * images (cover and hero) and "the last one" cannot say whether the right
+ * cover was chosen -- nor catch the same URL being fetched twice.
+ */
+const imagePaths = []
 let rawgDetailRequests = 0
 let sgdbSearches = 0
+let sgdbHeroRequests = 0
 
 export async function setup() {
   server = createServer((req, res) => {
@@ -136,12 +160,30 @@ export async function setup() {
       })
     }
 
+    if (url.pathname.startsWith('/sgdb/heroes/game/')) {
+      sgdbHeroRequests++
+      if (req.headers.authorization !== 'Bearer good-sgdb-key') {
+        return json(401, { success: false })
+      }
+      // A distinct filename from the grid, so an assertion can tell which shape
+      // ended up in which column instead of both matching the same path.
+      return json(200, {
+        success: true,
+        data: [{ url: `http://127.0.0.1:${server.address().port}/art/wide.png` }]
+      })
+    }
+
     // --- Images ---
     if (url.pathname.endsWith('.jpg') || url.pathname.endsWith('.png')) {
-      lastImagePath = url.pathname
+      imagePaths.push(url.pathname)
       // Served as image/png regardless of extension on purpose: covers.ts must
       // take the extension from the declared content type, not from the URL.
-      const bytes = url.pathname.startsWith('/art/') ? PNG_B : PNG_A
+      const bytes =
+        url.pathname === '/art/wide.png'
+          ? PNG_WIDE
+          : url.pathname.startsWith('/art/')
+            ? PNG_B
+            : PNG_A
       res.writeHead(200, { 'content-type': 'image/png', 'content-length': bytes.length })
       return res.end(bytes)
     }
@@ -279,12 +321,39 @@ export async function run({ ev, check, section, fixtures, app, reload, delay }) 
   check('enrichment fetched the description', /forge your own path/i.test(applied?.data?.game?.summary ?? ''))
   check('exactly one detail request was made', rawgDetailRequests === 1, `detail requests: ${rawgDetailRequests}`)
 
-  check('the cover came from RAWG while no art provider is set', lastImagePath === '/media/games/hollow.jpg', lastImagePath)
+  check(
+    'the cover came from RAWG while no art provider is set',
+    imagePaths.includes('/media/games/hollow.jpg'),
+    imagePaths.join(', ')
+  )
 
   const coverPath = applied?.data?.coverImagePath ?? ''
   check('the cover landed in the managed covers folder', coverPath.includes('covers'), coverPath)
   check('named by content hash, not by URL', /[\\/]\d+-[0-9a-f]{12}\.png$/.test(coverPath), coverPath)
   check('no temp file was left behind', !coverPath.includes('.tmp-'), coverPath)
+
+  /*
+   * RAWG hands back one landscape image and it is written to BOTH columns:
+   * being a poor 3:4 cover is exactly what makes it a usable wide backdrop.
+   *
+   * The download must happen once, not twice. Content hashing means a second
+   * fetch would produce the identical file, so the only thing a repeat costs is
+   * the round trip -- precisely the sort of waste that goes unnoticed without
+   * an assertion.
+   */
+  check('a hero was stored too', (applied?.data?.heroImagePath ?? '') !== '', applied?.data?.heroImagePath)
+  check('no hero error', applied?.data?.heroError === null, applied?.data?.heroError)
+  check(
+    'RAWG reuses its one image for both shapes',
+    applied?.data?.heroImagePath === coverPath,
+    `${applied?.data?.heroImagePath} vs ${coverPath}`
+  )
+  check(
+    'and downloads it exactly once',
+    imagePaths.filter((path) => path === '/media/games/hollow.jpg').length === 1,
+    imagePaths.join(', ')
+  )
+  check('the row carries the hero', applied?.data?.game?.heroImagePath === coverPath)
 
   section('Adding SteamGridDB upgrades the artwork')
 
@@ -297,19 +366,53 @@ export async function run({ ev, check, section, fixtures, app, reload, delay }) 
   check('it does not become the metadata source', savedArt?.data?.activeSource === 'rawg')
 
   const beforeSearches = sgdbSearches
+  const beforeHeroRequests = sgdbHeroRequests
+  const beforeImages = imagePaths.length
   const reapplied = await ev(`
     (async () => {
       const found = await window.api.metadata.search("Hollow Knight")
       return window.api.metadata.apply(${gameId}, found.data.results[0], { applyName: false, applyCover: true })
     })()
   `)
+  const fetchedNow = imagePaths.slice(beforeImages)
   check('apply succeeds with art configured', reapplied?.ok === true, reapplied?.error)
-  check('portrait art was preferred over the landscape image', lastImagePath === '/art/portrait.png', lastImagePath)
-  check('the art provider was consulted once', sgdbSearches === beforeSearches + 1, `searches: ${sgdbSearches}`)
+  check(
+    'portrait art was preferred over the landscape image',
+    fetchedNow.includes('/art/portrait.png'),
+    fetchedNow.join(', ')
+  )
+  check(
+    'the art provider was consulted for each shape',
+    sgdbSearches === beforeSearches + 2,
+    `searches: ${sgdbSearches}, was ${beforeSearches}`
+  )
+  check('the heroes endpoint was queried', sgdbHeroRequests === beforeHeroRequests + 1)
   check(
     'the new cover is a different file',
     (reapplied?.data?.coverImagePath ?? '') !== coverPath,
     reapplied?.data?.coverImagePath
+  )
+
+  /*
+   * The point of the whole feature: with an art provider configured the two
+   * columns hold DIFFERENT images -- a portrait grid for the library card and a
+   * composed wide banner for the detail backdrop. Storing one file in both is
+   * the failure this guards, because it looks correct on one screen and wrong
+   * on the other.
+   */
+  check(
+    'the wide art was fetched from the heroes endpoint',
+    fetchedNow.includes('/art/wide.png'),
+    fetchedNow.join(', ')
+  )
+  check(
+    'cover and hero are now distinct files',
+    (reapplied?.data?.heroImagePath ?? '') !== (reapplied?.data?.coverImagePath ?? ''),
+    `${reapplied?.data?.heroImagePath} vs ${reapplied?.data?.coverImagePath}`
+  )
+  check(
+    'the row agrees with what apply reported',
+    (reapplied?.data?.game?.heroImagePath ?? '') === (reapplied?.data?.heroImagePath ?? '')
   )
 
   section('Provider priority when more than one is configured')

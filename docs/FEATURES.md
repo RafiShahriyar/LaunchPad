@@ -877,13 +877,21 @@ tooling, and a rescan after cleanup finds nothing.
 
 Full suite across all 8 steps: **323 assertions, all passing.**
 
-### Theme is deliberately absent from the UI
+### Theme was deliberately absent from the UI — since resolved
 
-`theme` exists in the schema but is not offered, and main rejects attempts to set
-it. The UI uses Tailwind's default `slate` text scale rather than semantic
-tokens, so flipping the background variables alone would produce light-on-light
-text. Shipping a toggle that half-works would be worse than not shipping one; a
-real light theme needs the text colours moved to tokens first.
+*Superseded by the [Themes](#themes--done) section below. Kept because the
+reasoning is the reason that feature took the shape it did.*
+
+At step 8, `theme` existed in the schema but was not offered, and main rejected
+attempts to set it. The UI used Tailwind's default `slate` text scale rather than
+tokens, so flipping the background variables alone would have produced
+light-on-light text. Shipping a toggle that half-works would have been worse than
+not shipping one.
+
+That blocker was cleared later by renaming all 152 `text-slate-*` classes to
+`text-content-*`, which is what made the four-theme picker possible. The setting
+is now honoured. A **light** theme is still absent, for a different reason that
+survived the rename — the status banners are not tokenised.
 
 ### Known limitations
 
@@ -1209,6 +1217,200 @@ and credential removal taking the cached token with it.
 - **Credentials are stored in plaintext.** On a single-user desktop app the
   database is already readable by anyone who can read the user's profile, so
   encrypting it with a key stored beside it would be theatre.
+
+## Game detail header — Done
+
+The per-game page opens with full-bleed key art: the game's wide artwork
+behind the title, the cover thumbnail, the action buttons and a translucent
+information panel. Modelled on a console store page, which is the layout that
+answers "what is this game and do I want to open it" in one screen.
+
+### Where the artwork comes from
+
+All three providers can supply it, and two of them for free:
+
+| Provider | Source | Cost |
+|---|---|---|
+| **SteamGridDB** | `/heroes/game/{id}` | One extra request at apply time |
+| **RAWG** | `background_image` | **Nothing** — already in the search response |
+| **IGDB** | `artworks.image_id` at `t_1080p` | **Nothing** — one more field on the same query |
+
+SteamGridDB wins when configured, because its heroes are *composed* as banners:
+subject off to one side, room for a title. RAWG's and IGDB's wide images are
+screenshots and concept art that merely happen to be landscape.
+
+**RAWG's case is the neat one.** Its `background_image` is a landscape
+screenshot — the exact reason it makes a poor 3:4 cover and the reason
+SteamGridDB exists in this project. As a backdrop it is the right shape, so the
+field that fails one job does the other well, at zero extra cost.
+
+### The backdrop degrades in three visible steps
+
+1. **Wide art** — what the feature is for.
+2. **The cover, blurred and scaled** — a colour wash. Not a claim: the
+   unblurred original sits a few pixels away in the thumbnail, so nothing
+   suggests the game has key art it does not have.
+3. **A plain gradient, with the absence stated** — "No artwork". A bare gradient
+   reads equally as "no art" and "the image failed to load", the same ambiguity
+   the grid cards avoid by saying "No cover".
+
+Each state carries its own `data-testid`, because the failure worth guarding is
+the header rendering the *cover* as though it were wide art — which looks
+entirely plausible and is wrong.
+
+### Design decisions worth knowing
+
+- **A separate column, not a reused `cover_image_path`.** A game can have box
+  art and no hero; SteamGridDB carries grids for far more titles than heroes.
+  Collapsing them would mean stretching portrait art across the header or
+  emptying the grid card.
+- **The file lives in the existing covers folder.** Same `lpasset://` handler,
+  same download guards, same `deleteCoversForGame()` prefix sweep. A second
+  directory would have duplicated all three for no gain — the namespace names
+  the directory, not the shape of what is in it.
+- **Cover and hero download independently and report separate errors.** They
+  fail for different reasons with different consequences: no cover leaves a
+  blank grid card, no hero only drops the page to fallback. One combined error
+  could not say which happened.
+- **`swapArtwork()` takes a `keep` argument.** Cover and hero can be the *same
+  file* — a RAWG-only setup writes one landscape image to both columns — so
+  replacing the cover would otherwise delete the file the hero still points at.
+- **Applying twice from RAWG downloads its image once.** Content hashing means a
+  second fetch produces the identical file, so the repeat costs only the round
+  trip. The e2e suite asserts the count, because that waste is invisible
+  otherwise.
+- **Four scrim layers, not one gradient.** A flat wash, a bottom fade into the
+  page, a left darkening under the text, and a top darkening under the back
+  control. Tuned independently; one many-stop expression stops being editable by
+  anyone but its author.
+- **A `glass` Button variant** rather than extra classes at the call site. Two
+  `bg-*` utilities on one element resolve by their order in the generated
+  stylesheet, not in the class attribute, so "override it inline" works or does
+  not depending on what Tailwind emitted last.
+
+### Verified — 14 assertions in `detail-view`, 9 in `metadata`
+
+The detail suite walks all three backdrop states in order and checks the
+transitions, not just the end state. The metadata suite asserts that RAWG writes
+one file to both columns and fetches it once, and that with SteamGridDB
+configured the two columns hold **different** files — storing one image in both
+is the failure that looks right on one screen and wrong on the other.
+
+The stub server serves genuinely different bytes for the grid and the hero. It
+had to: managed artwork is named by a hash of its content, so a stub returning
+the same pixels for both would collapse them into one file and make the whole
+assertion vacuous.
+
+### Known limitations
+
+- **Nothing back-fills existing games.** `hero_image_path` is written only when
+  metadata is applied, so a library matched before this change shows the blurred
+  cover until each game is re-matched. A refresh action is the fix and does not
+  exist yet — the same gap `metadata_id` was stored to close.
+- **No way to set wide art by hand.** There is no picker, and the field is
+  deliberately not part of `NewGame`, so a game the providers do not carry can
+  only fall back.
+- **The blurred-cover fallback is soft**, because it is a 300x400 image scaled
+  across a full-width header. Acceptable as a colour wash; it is not artwork.
+- **Hero coverage is thinner than box art** even on SteamGridDB, so a
+  correctly-matched game can still have no wide image.
+- **One image, no art direction.** The first entry the provider returns is used;
+  IGDB orders `artworks` by upload rather than quality, and inventing a ranking
+  would be guesswork dressed as selection.
+- **The header is not responsive below roughly 900px** — the info panel wraps
+  under the title rather than collapsing. The window has a minimum size that
+  keeps it above that, so this has not bitten yet.
+
+## Themes — Done
+
+**Settings → Appearance** offers four palettes. The original is preserved
+unchanged as the default; three were added alongside it.
+
+| id | Label | Look |
+|---|---|---|
+| `dark` | Midnight | The original — cool blue-black surfaces, blue accent |
+| `nebula` | Nebula | Neutral near-black, violet accent |
+| `ember` | Ember | Warm charcoal, orange accent |
+| `verdant` | Verdant | Deep green-black, teal accent |
+
+### How it works
+
+Tailwind v4 compiles `bg-surface-900` to `background-color:
+var(--color-surface-900)` — a live custom-property reference, not an inlined
+hex. So a theme is a block that redefines sixteen variables, and switching one
+repaints the entire app through the cascade: no component re-renders for colour,
+no class names change, and a new theme touches exactly one file.
+
+Three ramps cover everything themed: `surface-*` (backgrounds, 950→600),
+`content-*` (text, 100→700) and `accent-*` (the one interactive hue).
+
+### The prerequisite this needed
+
+The theme setting existed in the schema from the beginning and main **refused to
+set it**, because the UI hardcoded 152 `text-slate-*` classes. Flipping the
+background variables alone would have produced light-on-light text — so the
+setting was honestly rejected rather than stored-and-ignored.
+
+Making themes possible was that rename: `text-slate-N` → `text-content-N`, all
+152 of them. Backgrounds and borders were already tokenised, which is why the
+change was mechanical.
+
+**`content-*` is a lightness ramp, not semantic names** (`fg-primary`,
+`fg-muted`). Deliberate: retrofitting semantics onto 152 call sites means judging
+the intent of each one and getting some silently wrong. A ramp maps 1:1 onto what
+the code already said, so the migration was reviewable — and a theme still
+defines all seven steps however it likes.
+
+### Design decisions worth knowing
+
+- **`dark` keeps its id** rather than being renamed to `midnight`. Existing
+  databases store the string `dark`, and the parser falls back to the default
+  for anything unrecognised — a rename would silently reset the theme of every
+  upgrading install. A display label costs nothing.
+- **The override selector is `[data-theme=…]`, unanchored.** `:root[data-theme]`
+  matches `<html>` only, which would make the picker's swatches all render in
+  the active theme. Unanchored, a swatch previews its own palette by nesting the
+  attribute — so **the picker contains no colour values at all** and cannot
+  drift from the palettes.
+- **The attribute goes on `<html>`.** `body` and the scrollbar rules live outside
+  the React tree and would otherwise keep the old colours.
+- **The active theme is stated in words** ("Active"), not signalled only by a
+  ring. Which of four similar dark swatches is selected is exactly what a
+  colour-only cue fails to answer.
+- **`ThemeId` is enumerated as `Record<ThemeId, true>`**, per the trap recorded
+  in the metadata section: an array literal typed as the union accepts a short
+  list and fails at runtime.
+
+### Verified — 29 assertions (`tests/suites/themes.mjs`), plus 3 in `settings`
+
+The assertions read `getComputedStyle` and compare real `rgb()` output, not the
+attribute. A theme that sets `data-theme` correctly while every utility keeps its
+previous colour is a passing attribute test and a broken feature — which is what
+would happen if Tailwind ever inlined theme values, or if the override blocks
+landed in a cascade layer that loses to `:root`.
+
+Also covered: persistence across reload and restart, rejection of unknown themes
+(including the removed `light`), that all four swatches paint differently, and
+that the `@theme` defaults still match the `[data-theme='dark']` block — the two
+copies of the default palette that exist for reasons explained in `index.css`.
+
+### Known limitations
+
+- **There is no light theme, and the union no longer contains one.** Status
+  banners (`bg-red-950`, `text-emerald-200`, `bg-amber-950`) are fixed dark-mode
+  colours outside every ramp, so a light surface would render them dark-on-dark.
+  Tokenising those is the work a light theme needs. It is absent rather than
+  present-and-broken — the same call the setting has carried since it was added.
+- **Themes change colour only, not shape or density.** Corner radii, spacing and
+  the sidebar layout are the same in all four.
+- **A stored theme that is later removed from the union resets to `dark`** rather
+  than being migrated to a near equivalent. Correct for `light`, which had no
+  equivalent; worth revisiting if a palette is ever renamed.
+- **One frame of default palette on a cold start.** The renderer paints before
+  the settings round trip resolves, so a non-default theme technically arrives a
+  frame late. Not observable in practice against a local SQLite read, and the
+  fix (caching the id outside the store for first paint) would add a second
+  source of truth for a problem nobody has reported.
 
 ## Sample data (development only)
 

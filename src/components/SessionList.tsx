@@ -12,7 +12,7 @@ import { useAppSelector } from '@/store/hooks'
  */
 const EXIT_REASONS: Record<SessionExitReason, { label: string; className: string; hint: string }> =
   {
-    exited: { label: 'Finished', className: 'text-slate-500', hint: 'The game closed normally' },
+    exited: { label: 'Finished', className: 'text-content-500', hint: 'The game closed normally' },
     crashed: {
       label: 'Ended unexpectedly',
       className: 'text-amber-500',
@@ -20,10 +20,10 @@ const EXIT_REASONS: Record<SessionExitReason, { label: string; className: string
     },
     app_closed: {
       label: 'Interrupted',
-      className: 'text-slate-500',
+      className: 'text-content-500',
       hint: 'LaunchPad closed while this session was running, so the length may be incomplete'
     },
-    unknown: { label: 'Unknown', className: 'text-slate-600', hint: 'The outcome was not recorded' }
+    unknown: { label: 'Unknown', className: 'text-content-600', hint: 'The outcome was not recorded' }
   }
 
 export function SessionList({ gameId, limit }: { gameId: number; limit?: number }) {
@@ -41,8 +41,8 @@ export function SessionList({ gameId, limit }: { gameId: number; limit?: number 
   if (visible.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-surface-600 p-8 text-center">
-        <p className="text-sm text-slate-300">No sessions yet</p>
-        <p className="mx-auto mt-2 max-w-sm text-xs text-slate-500">
+        <p className="text-sm text-content-300">No sessions yet</p>
+        <p className="mx-auto mt-2 max-w-sm text-xs text-content-500">
           Press Play and LaunchPad will time the session automatically.
         </p>
       </div>
@@ -65,7 +65,7 @@ export function SessionList({ gameId, limit }: { gameId: number; limit?: number 
             }`}
           >
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-slate-200">{formatDateTime(session.startedAt)}</p>
+              <p className="text-sm text-content-200">{formatDateTime(session.startedAt)}</p>
               {reason && !isActive && (
                 <p className={`mt-0.5 text-xs ${reason.className}`} title={reason.hint}>
                   {reason.label}
@@ -75,7 +75,7 @@ export function SessionList({ gameId, limit }: { gameId: number; limit?: number 
 
             <span
               className={`shrink-0 text-sm tabular-nums ${
-                isActive ? 'text-emerald-400' : 'text-slate-300'
+                isActive ? 'text-emerald-400' : 'text-content-300'
               }`}
             >
               {isActive ? 'Playing now' : formatSessionDuration(session.durationSeconds)}

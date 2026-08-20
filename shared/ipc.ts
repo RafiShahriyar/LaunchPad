@@ -314,6 +314,16 @@ export interface MetadataSearchResult {
   /** Remote URL of full-size portrait box art, downloaded only when applied. */
   coverUrl: string | null
   /**
+   * Remote URL of wide key art for the detail backdrop, or null.
+   *
+   * Carried on the search result even though it is only used at apply time,
+   * because for two of the three providers it costs nothing to collect: RAWG's
+   * `background_image` is already in the list response, and IGDB's artwork id
+   * is one more field on a query being made anyway. Fetching it later would
+   * turn a free field into a second request.
+   */
+  heroUrl: string | null
+  /**
    * A tiny preview of the box art, inlined as a `data:` URI by main.
    *
    * The picker is unusable without thumbnails — several editions of a game look
@@ -358,6 +368,18 @@ export interface MetadataApplyResult {
    * success, and failing the whole operation would discard work that succeeded.
    */
   coverError: string | null
+  /** The managed hero path, or null when none was requested or available. */
+  heroImagePath: string | null
+  /**
+   * Set when the wide art specifically failed.
+   *
+   * Tracked apart from `coverError` because the two are independent downloads
+   * with different consequences: losing the cover leaves a blank grid card,
+   * losing the hero only leaves the detail page falling back to the cover. A
+   * single combined error could not say which happened, and the dialog would
+   * have to overstate the damage.
+   */
+  heroError: string | null
 }
 
 /** One credential input a provider needs. */

@@ -46,7 +46,7 @@ export function TitleBar() {
         onClick={() => void dispatch(toggleFullScreen())}
         aria-label="Enter fullscreen"
         title="Fullscreen (F11)"
-        className="titlebar-nodrag mr-1 grid h-[26px] w-[26px] place-items-center rounded text-slate-500 transition-colors hover:bg-surface-700 hover:text-slate-200"
+        className="titlebar-nodrag mr-1 grid h-[26px] w-[26px] place-items-center rounded text-content-500 transition-colors hover:bg-surface-700 hover:text-content-200"
       >
         <FullscreenIcon />
       </button>
@@ -112,10 +112,10 @@ function ControlButton({
       aria-label={label}
       title={label}
       data-window-control={label.toLowerCase()}
-      className={`grid w-[46px] place-items-center text-slate-400 transition-colors ${
+      className={`grid w-[46px] place-items-center text-content-400 transition-colors ${
         danger
           ? 'hover:bg-red-600 hover:text-white active:bg-red-700'
-          : 'hover:bg-surface-700 hover:text-slate-100 active:bg-surface-600'
+          : 'hover:bg-surface-700 hover:text-content-100 active:bg-surface-600'
       }`}
     >
       {children}
@@ -141,7 +141,7 @@ export function FullscreenExitButton() {
       onClick={() => void dispatch(toggleFullScreen())}
       aria-label="Exit fullscreen"
       title="Exit fullscreen (F11 or Esc)"
-      className="fixed right-3 top-3 z-40 grid h-7 w-7 place-items-center rounded-md bg-surface-900/80 text-slate-500 opacity-30 backdrop-blur transition-all hover:bg-surface-800 hover:text-slate-200 hover:opacity-100 focus-visible:opacity-100"
+      className="fixed right-3 top-3 z-40 grid h-7 w-7 place-items-center rounded-md bg-surface-900/80 text-content-500 opacity-30 backdrop-blur transition-all hover:bg-surface-800 hover:text-content-200 hover:opacity-100 focus-visible:opacity-100"
     >
       <FullscreenExitIcon />
     </button>

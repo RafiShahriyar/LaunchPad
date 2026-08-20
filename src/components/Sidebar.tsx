@@ -50,7 +50,7 @@ export function Sidebar() {
           LP
         </span>
         {!collapsed && (
-          <span className="mr-auto truncate text-sm font-semibold tracking-wide text-slate-100">
+          <span className="mr-auto truncate text-sm font-semibold tracking-wide text-content-100">
             LaunchPad
           </span>
         )}
@@ -75,8 +75,8 @@ export function Sidebar() {
                 collapsed ? 'justify-center px-0' : 'gap-3 px-3'
               } ${
                 isActive
-                  ? 'bg-surface-800 text-slate-100'
-                  : 'text-slate-400 hover:bg-surface-850 hover:text-slate-200'
+                  ? 'bg-surface-800 text-content-100'
+                  : 'text-content-400 hover:bg-surface-850 hover:text-content-200'
               }`}
             >
               <span className="text-base leading-none">{item.icon}</span>
@@ -96,7 +96,7 @@ function CollapseButton({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       aria-expanded={!collapsed}
       title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-surface-700 text-slate-400 transition-colors hover:border-surface-600 hover:bg-surface-800 hover:text-slate-100"
+      className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-surface-700 text-content-400 transition-colors hover:border-surface-600 hover:bg-surface-800 hover:text-content-100"
     >
       <svg
         width="14"

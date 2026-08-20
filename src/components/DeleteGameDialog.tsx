@@ -46,7 +46,7 @@ export function DeleteGameDialog({ gameId }: { gameId: number }) {
         </>
       }
     >
-      <div className="space-y-4 text-sm text-slate-300">
+      <div className="space-y-4 text-sm text-content-300">
         <p>
           This removes the library entry and its play history. The game itself stays installed —
           LaunchPad never touches the executable or its folder.
@@ -60,8 +60,8 @@ export function DeleteGameDialog({ gameId }: { gameId: number }) {
             className="mt-0.5 h-4 w-4 accent-red-500"
           />
           <span>
-            <span className="font-medium text-slate-200">Also delete save backups</span>
-            <span className="mt-1 block text-xs text-slate-500">
+            <span className="font-medium text-content-200">Also delete save backups</span>
+            <span className="mt-1 block text-xs text-content-500">
               Leave this unchecked to keep the backup folders on disk. You can restore them by
               hand, or by re-adding the game later.
             </span>

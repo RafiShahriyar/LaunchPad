@@ -7,7 +7,7 @@ import {
   type MetadataSearchResult,
   type MetadataStatus
 } from '@shared/ipc'
-import type { CredentialProvider, MetadataSource } from '@shared/types'
+import type { CredentialProvider, Game, MetadataSource } from '@shared/types'
 import { gamesRepo } from '@db/index'
 import { importCoverFromUrl } from '../services/covers'
 import {
@@ -16,6 +16,7 @@ import {
   getStatus,
   removeCredentials,
   resolveCoverUrl,
+  resolveHeroUrl,
   saveCredentials,
   searchGames
 } from '../services/metadata'
@@ -102,6 +103,19 @@ function validateSearchResult(raw: unknown): MetadataSearchResult {
     throw new Error('Cover URL must be an http(s) URL')
   }
 
+  /*
+   * Checked the same way as the cover, and for the same reason: this value
+   * makes the round trip through the renderer, so on the way back it is
+   * attacker-controlled input rather than something a provider said. The
+   * scheme check here is the cheap first gate; importCoverFromUrl still
+   * re-validates the protocol, the declared content type, the byte length and
+   * the leading magic bytes before anything reaches disk.
+   */
+  const heroUrl = optionalString(value.heroUrl, 'Hero URL', 2000)
+  if (heroUrl !== null && !/^https?:\/\//i.test(heroUrl)) {
+    throw new Error('Hero URL must be an http(s) URL')
+  }
+
   return {
     id: requireString(value.id, 'Metadata id', 64),
     source: requireSource(value.source),
@@ -110,6 +124,7 @@ function validateSearchResult(raw: unknown): MetadataSearchResult {
     genres: requireGenres(value.genres),
     summary: optionalString(value.summary, 'Summary', MAX_SUMMARY_LENGTH),
     coverUrl,
+    heroUrl,
     /*
      * Discarded rather than validated. The thumbnail exists only so the picker
      * can show art while choosing; applying re-resolves the full-size cover.
@@ -234,8 +249,19 @@ export function registerMetadataHandlers(): void {
       }
 
       if (!options.applyCover) {
-        return { game, coverImagePath: null, coverError: null }
+        return {
+          game,
+          coverImagePath: null,
+          coverError: null,
+          heroImagePath: null,
+          heroError: null
+        }
       }
+
+      let coverImagePath: string | null = null
+      let coverError: string | null = null
+      let heroImagePath: string | null = null
+      let heroError: string | null = null
 
       /*
        * Prefers portrait box art from an art provider over the metadata
@@ -243,30 +269,96 @@ export function registerMetadataHandlers(): void {
        * screenshot cropped to that shape keeps only a middle sliver.
        */
       const coverUrl = await resolveCoverUrl(result)
-      if (coverUrl === null) {
-        return { game, coverImagePath: null, coverError: null }
+      if (coverUrl !== null) {
+        try {
+          const swapped = await swapArtwork(
+            gameId,
+            coverUrl,
+            game.coverImagePath,
+            game.heroImagePath,
+            (path) => gamesRepo.updateGame(gameId, { coverImagePath: path }, nowIso())
+          )
+          coverImagePath = swapped.path
+          game = swapped.game
+        } catch (err) {
+          coverError = err instanceof Error ? err.message : String(err)
+        }
       }
 
-      try {
-        const managedCover = await importCoverFromUrl(coverUrl, gameId)
-        const previousCover = game.coverImagePath
-        game = gamesRepo.updateGame(gameId, { coverImagePath: managedCover }, nowIso())
-
-        // Remove the old artwork only once the new file is safely in place and
-        // the row points at it, so a failure never leaves the game with no cover.
-        if (previousCover && previousCover !== managedCover) {
+      /*
+       * The wide backdrop is downloaded independently of the cover, and its
+       * failure is reported separately. They fail for different reasons and
+       * cost different things: no cover leaves a blank grid card, no hero only
+       * means the detail page falls back to the cover.
+       */
+      const wideUrl = await resolveHeroUrl(result)
+      if (wideUrl !== null) {
+        if (wideUrl === coverUrl && coverImagePath !== null) {
+          /*
+           * RAWG returns the same landscape image for both fields -- being a
+           * poor 3:4 cover is precisely why it makes a good backdrop. It is
+           * already downloaded, and content hashing means a second fetch would
+           * spend the bandwidth only to arrive at the identical path.
+           */
           try {
-            rmSync(previousCover, { force: true })
-          } catch {
-            // Stale image left behind; harmless.
+            game = gamesRepo.setHeroImagePath(gameId, coverImagePath, nowIso())
+            heroImagePath = coverImagePath
+          } catch (err) {
+            heroError = err instanceof Error ? err.message : String(err)
+          }
+        } else {
+          try {
+            const swapped = await swapArtwork(
+              gameId,
+              wideUrl,
+              game.heroImagePath,
+              game.coverImagePath,
+              (path) => gamesRepo.setHeroImagePath(gameId, path, nowIso())
+            )
+            heroImagePath = swapped.path
+            game = swapped.game
+          } catch (err) {
+            heroError = err instanceof Error ? err.message : String(err)
           }
         }
-
-        return { game, coverImagePath: managedCover, coverError: null }
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err)
-        return { game, coverImagePath: null, coverError: reason }
       }
+
+      return { game, coverImagePath, coverError, heroImagePath, heroError }
     }
   )
+}
+
+/**
+ * Downloads one image, points the row at it, then removes the file it replaced.
+ *
+ * The order is the backup writer's rule again: the new file must be on disk AND
+ * the row must already point at it before anything is deleted, so an
+ * interrupted swap can only ever leave a harmless extra file, never a game
+ * pointing at one that is gone.
+ *
+ * `keep` is the game's OTHER artwork path, and it is the whole reason this is a
+ * shared helper rather than two blocks. Cover and hero can legitimately be the
+ * same file — a RAWG-only setup stores one landscape image under both fields —
+ * so replacing the cover would otherwise delete the file the hero still
+ * references and leave the detail page pointing at nothing.
+ */
+async function swapArtwork(
+  gameId: number,
+  url: string,
+  previousPath: string | null,
+  keep: string | null,
+  write: (path: string) => Game
+): Promise<{ path: string; game: Game }> {
+  const managed = await importCoverFromUrl(url, gameId)
+  const game = write(managed)
+
+  if (previousPath && previousPath !== managed && previousPath !== keep) {
+    try {
+      rmSync(previousPath, { force: true })
+    } catch {
+      // Stale image left behind; harmless.
+    }
+  }
+
+  return { path: managed, game }
 }

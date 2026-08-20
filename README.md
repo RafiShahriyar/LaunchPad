@@ -100,6 +100,29 @@ and genres; pick one and LaunchPad fills in the rest when you save. Covers open
 full size on click, and a game with no artwork says so rather than showing a
 blank box.
 
+### The game page
+
+Opening a game shows its key art full-bleed behind the title, the actions and a
+summary panel — release date, genres, playtime, sessions, backups.
+
+The artwork comes from the same providers as everything else: SteamGridDB has
+purpose-made wide banners, and RAWG and IGDB both hand one over at no extra cost.
+A game with no wide art falls back to a blurred version of its cover, and a game
+with no artwork at all says so rather than showing an empty box.
+
+Artwork is filled in when you match a game, so games matched before this existed
+keep the fallback until you re-match them.
+
+### Themes
+
+**Settings → Appearance** offers four palettes — Midnight (the original),
+Nebula, Ember and Verdant. The choice applies instantly and is remembered
+between sessions.
+
+Each swatch previews itself in its own colours, so what you see in the picker is
+what the app becomes. All four are dark: a light theme needs the status banners
+tokenised first, and is left out rather than shipped half-working.
+
 ### Trying it without real games
 
 In development builds only: **Settings → Developer → Add sample data**. It
@@ -116,8 +139,8 @@ npm run dev        # dev server: renderer HMR + main/preload restart
 npm run build      # typecheck both projects, then build all three targets
 npm start          # run the production build unpackaged
 npm run typecheck  # both tsconfig projects
-npm run verify:db  # 97-assertion data-layer suite under plain Node (~1s)
-npm run test:e2e   # 447 end-to-end assertions against a real Electron window
+npm run verify:db  # 106-assertion data-layer suite under plain Node (~1s)
+npm run test:e2e   # 502 end-to-end assertions against a real Electron window
 npm test           # both suites
 npm run dist       # package a Windows build
 ```

@@ -1,4 +1,4 @@
-import type { AppSettings } from '@shared/types'
+import { isThemeId, type AppSettings } from '@shared/types'
 import { getDb, transaction } from '../client'
 import { DEFAULT_SETTINGS, SETTINGS_KEYS } from '../defaults'
 import { readString } from '../row'
@@ -62,7 +62,7 @@ export function getSettings(): AppSettings {
       DEFAULT_SETTINGS.minSessionSeconds,
       0
     ),
-    theme: theme === 'light' || theme === 'dark' ? theme : DEFAULT_SETTINGS.theme,
+    theme: isThemeId(theme) ? theme : DEFAULT_SETTINGS.theme,
     sidebarCollapsed: parseBoolean(
       raw.get(SETTINGS_KEYS.sidebarCollapsed),
       DEFAULT_SETTINGS.sidebarCollapsed

@@ -25,8 +25,8 @@ export function BackupList({ gameId, emptyHint }: { gameId: number; emptyHint: s
   if (backups.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-surface-600 p-8 text-center">
-        <p className="text-sm text-slate-300">No backups yet</p>
-        <p className="mx-auto mt-2 max-w-sm text-xs text-slate-500">{emptyHint}</p>
+        <p className="text-sm text-content-300">No backups yet</p>
+        <p className="mx-auto mt-2 max-w-sm text-xs text-content-500">{emptyHint}</p>
       </div>
     )
   }
@@ -48,9 +48,9 @@ function BackupRow({ backup, gameId }: { backup: SaveBackup; gameId: number }) {
     <li className="flex items-center gap-3 rounded-lg border border-surface-700 bg-surface-900 px-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-slate-200">{formatDateTime(backup.createdAt)}</span>
+          <span className="text-sm text-content-200">{formatDateTime(backup.createdAt)}</span>
           <span
-            className="rounded bg-surface-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400"
+            className="rounded bg-surface-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-content-400"
             title={trigger.hint}
           >
             {trigger.label}
@@ -64,7 +64,7 @@ function BackupRow({ backup, gameId }: { backup: SaveBackup; gameId: number }) {
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-0.5 text-xs text-content-500">
           {backup.fileCount} file{backup.fileCount === 1 ? '' : 's'} ·{' '}
           {formatBytes(backup.sizeBytes)}
         </p>
@@ -83,7 +83,7 @@ function BackupRow({ backup, gameId }: { backup: SaveBackup; gameId: number }) {
         className={`rounded-md px-2 py-1 text-sm transition-colors ${
           backup.isPinned
             ? 'text-amber-400 hover:bg-surface-700'
-            : 'text-slate-500 hover:bg-surface-700 hover:text-slate-300'
+            : 'text-content-500 hover:bg-surface-700 hover:text-content-300'
         }`}
       >
         {backup.isPinned ? '★' : '☆'}
@@ -100,7 +100,7 @@ function BackupRow({ backup, gameId }: { backup: SaveBackup; gameId: number }) {
         onClick={() => void dispatch(deleteBackup({ backupId: backup.id, gameId }))}
         aria-label={`Delete backup ${backup.id}`}
         title="Delete this snapshot"
-        className="rounded-md px-2 py-1 text-sm text-slate-500 transition-colors hover:bg-red-600 hover:text-white"
+        className="rounded-md px-2 py-1 text-sm text-content-500 transition-colors hover:bg-red-600 hover:text-white"
       >
         🗑
       </button>

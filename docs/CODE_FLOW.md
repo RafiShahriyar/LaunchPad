@@ -170,11 +170,19 @@ the same whichever one it picks.
 | 14b | Main | `services/metadata.ts` | `resolveCoverUrl()` asks the art provider (SteamGridDB) for portrait box art by name, falling back to the metadata provider's own image. Run **once, here** — never per search result, which would be two extra requests for each of twelve rows about to be discarded. |
 | 15 | Main | `electron/services/covers.ts` | `importCoverFromUrl()` checks the declared type, the length, and the **leading bytes**, writes to `.tmp-…`, then renames. The rename is the commit point, the same rule the backup writer follows. |
 | 16 | Main | `electron/ipc/metadata.ts` | The old cover is deleted only after the row points at the new one. A download failure returns `coverError` instead of throwing — the text fields already applied, so it is a partial success. |
+| 16b | Main | `services/metadata.ts` | `resolveHeroUrl()` mirrors the cover step for **wide** art: SteamGridDB's `/heroes/` endpoint first, falling back to the metadata provider's own landscape image (RAWG's `background_image`, IGDB's `artworks`). |
+| 16c | Main | `electron/ipc/metadata.ts` | The hero downloads through the same `swapArtwork()` helper and reports its **own** `heroError`. If RAWG resolved both to the same URL the file is reused rather than fetched twice — content hashing would produce the identical path anyway. |
 | 17 | Renderer | `GameFormModal.tsx` | On full success the dialog closes. On `coverError` it stays open, says genres and description were saved but the art was not, and the primary button becomes **Done**. |
 
 **Why the local writes come before the network one:** so a failed download
 cannot discard work that succeeded. Reversing the order would mean a dropped
 connection loses the genres too.
+
+**Why `swapArtwork()` takes a `keep` argument.** Cover and hero can point at the
+*same file* — a RAWG-only setup writes one landscape image to both columns — so
+replacing the cover would delete the file the hero still references and leave
+the detail page pointing at nothing. `keep` is the game's other artwork path,
+and the delete is skipped when they match.
 
 ---
 
@@ -353,13 +361,20 @@ no reload.
 
 ---
 
+**The header backdrop resolves in the renderer, not the row.** `heroImagePath`
+is the only artwork fact stored; the three-step fallback — wide art, then the
+blurred cover, then a stated absence — is a rendering decision in
+`GameDetailPage`. Writing "use the cover" into the database instead would make
+the row claim something the provider never said, and would have to be rewritten
+the moment a hero arrived.
+
 ## Change a setting
 
 | # | Layer | File | What happens |
 |---|---|---|---|
 | 1 | Renderer | `src/pages/SettingsPage.tsx` | Numeric fields commit on **blur or Enter**, not per keystroke — saving mid-typing would send `1`, `12`, `120` for "120". Toggles commit immediately. |
 | 2 | Renderer | `src/store/slices/settingsSlice.ts` | `updateSettings(patch)` sends only the changed keys. |
-| 3 | Main | `electron/ipc/settings.ts` | `validatePatch()` **rejects** out-of-range values with a message rather than clamping, so the user learns why. `theme` is dropped: the light theme is unimplemented, so persisting it would store a value nothing honours. |
+| 3 | Main | `electron/ipc/settings.ts` | `validatePatch()` **rejects** out-of-range values with a message rather than clamping, so the user learns why. `theme` is checked against `isThemeId()` — the shared type guard, not a list written out here, so there is no second enumeration to forget. |
 | 4 | Main | `electron/ipc/settings.ts` | A new backups root is `mkdir`-ed immediately, so a bad path fails while the user is looking at the field rather than silently at some later launch. |
 | 5 | Main | `db/repositories/settings.ts` | `updateSettings()` writes the changed keys and returns the **full parsed settings**. |
 | 6 | Renderer | `settingsSlice.ts` | `.fulfilled` replaces state with what main returned — never with what was sent, since the canonical result may differ and showing the request would misreport what the app uses. |
@@ -369,6 +384,31 @@ absolute paths, so they stay listed and restorable from where they were written.
 This is also why the destructive-path guard is structural rather than
 root-relative — see `assertLooksLikeSnapshotFolder()` in
 `electron/services/backups.ts`.
+
+---
+
+## Change the theme
+
+| # | Layer | File | What happens |
+|---|---|---|---|
+| 1 | Renderer | `src/pages/SettingsPage.tsx` | `ThemePicker` renders one button per entry in `THEMES`. Each preview is wrapped in `data-theme={id}`, so the ordinary `bg-surface-*` / `bg-accent-*` utilities inside it resolve to **that** theme's values. The picker knows no hex codes. |
+| 2 | Renderer | `src/store/slices/settingsSlice.ts` | `updateSettings({ theme })` — the same thunk every other setting uses. Nothing about theming has its own IPC channel. |
+| 3 | Main | `electron/ipc/settings.ts` | `isThemeId()` rejects anything outside the union, so an unknown theme fails at the action rather than being stored and silently ignored. |
+| 4 | Main | `db/repositories/settings.ts` | Written to the `settings` table like any other key. On **read**, `isThemeId()` guards again: a stored value that is no longer a valid theme falls back to the default rather than propagating. |
+| 5 | Renderer | `src/App.tsx` | An effect mirrors `settings.theme` onto `document.documentElement.dataset.theme`. |
+| 6 | Browser | `src/index.css` | `[data-theme='…']` redefines the CSS custom properties. Every utility in the app already reads `var(--color-…)`, so the repaint is the cascade doing its job — no component re-renders for colour, and no class names change. |
+
+**Why the attribute goes on `<html>` and not on a React wrapper.** `body` carries
+the app background and the scrollbar rules read `--color-surface-600`; both sit
+outside the React tree. An attribute on a div inside `#root` would leave the
+window backdrop and the scrollbars painted in the previous theme.
+
+**Why the override selector is `[data-theme=…]` and not `:root[data-theme=…]`.**
+`:root` matches `<html>` alone, which would make every swatch in the picker
+render in the *active* theme — four identical previews. The unanchored selector
+also happens to sidestep a specificity race with Tailwind's own `:root`: these
+blocks are unlayered, and unlayered styles beat everything in `@layer theme`
+regardless of source order.
 
 ---
 

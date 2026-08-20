@@ -145,14 +145,14 @@ export function NameCombobox({ value, onChange, onSelect, inputClass }: NameComb
       />
 
       {!configured && (
-        <p className="mt-1.5 text-xs text-slate-500">
+        <p className="mt-1.5 text-xs text-content-500">
           Add a provider in Settings → Game metadata to search for cover art and genres as you
           type.
         </p>
       )}
 
       {configured && searchStatus === 'loading' && (
-        <p className="mt-1.5 text-xs text-slate-500">Searching…</p>
+        <p className="mt-1.5 text-xs text-content-500">Searching…</p>
       )}
 
       {listOpen && (
@@ -165,7 +165,7 @@ export function NameCombobox({ value, onChange, onSelect, inputClass }: NameComb
           )}
 
           {!searchError && searched && results.length === 0 && (
-            <p className="px-3 py-2 text-sm text-slate-400">
+            <p className="px-3 py-2 text-sm text-content-400">
               No matches for “{query}”. Keep typing, or just use the name as written.
             </p>
           )}
@@ -203,14 +203,14 @@ export function NameCombobox({ value, onChange, onSelect, inputClass }: NameComb
                         ) : (
                           // Says so rather than showing a blank box, so an entry
                           // with no art is distinguishable from one still loading.
-                          <span className="grid h-full w-full place-items-center text-[9px] leading-tight text-slate-600">
+                          <span className="grid h-full w-full place-items-center text-[9px] leading-tight text-content-600">
                             No art
                           </span>
                         )}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-slate-200">{result.name}</span>
-                        <span className="block text-xs text-slate-500">
+                        <span className="block truncate text-sm text-content-200">{result.name}</span>
+                        <span className="block text-xs text-content-500">
                           {/*
                             "Year unknown" rather than omitting it, so a row never
                             implies the provider has no date on record.
@@ -224,7 +224,7 @@ export function NameCombobox({ value, onChange, onSelect, inputClass }: NameComb
                 ))}
               </ul>
               {sourceName && (
-                <p className="border-t border-surface-700 px-3 py-1.5 text-[11px] text-slate-600">
+                <p className="border-t border-surface-700 px-3 py-1.5 text-[11px] text-content-600">
                   Results from {sourceName}
                 </p>
               )}

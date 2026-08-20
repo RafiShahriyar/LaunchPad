@@ -30,8 +30,8 @@ export function LibraryPage() {
     <div className="p-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="mr-auto">
-          <h1 className="text-2xl font-semibold text-slate-100">Library</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-content-100">Library</h1>
+          <p className="mt-0.5 text-sm text-content-500">
             {totalGames === 0
               ? 'No games yet'
               : `${totalGames} game${totalGames === 1 ? '' : 's'}${
@@ -44,7 +44,7 @@ export function LibraryPage() {
           value={searchQuery}
           onChange={(event) => dispatch(searchQueryChanged(event.target.value))}
           placeholder="Search…"
-          className="w-48 rounded-lg border border-surface-600 bg-surface-900 px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-accent-500 focus:outline-none"
+          className="w-48 rounded-lg border border-surface-600 bg-surface-900 px-3 py-1.5 text-sm text-content-200 placeholder:text-content-600 focus:border-accent-500 focus:outline-none"
         />
 
         <select
@@ -54,7 +54,7 @@ export function LibraryPage() {
               sortChanged({ key: event.target.value as LibrarySortKey, direction: sortDirection })
             )
           }
-          className="rounded-lg border border-surface-600 bg-surface-900 px-3 py-1.5 text-sm text-slate-200 focus:border-accent-500 focus:outline-none"
+          className="rounded-lg border border-surface-600 bg-surface-900 px-3 py-1.5 text-sm text-content-200 focus:border-accent-500 focus:outline-none"
         >
           {SORT_OPTIONS.map((option) => (
             <option key={option.key} value={option.key}>
@@ -70,7 +70,7 @@ export function LibraryPage() {
             )
           }
           aria-label={sortDirection === 'asc' ? 'Sort descending' : 'Sort ascending'}
-          className="rounded-lg border border-surface-600 bg-surface-900 px-2.5 py-1.5 text-sm text-slate-300 hover:bg-surface-800"
+          className="rounded-lg border border-surface-600 bg-surface-900 px-2.5 py-1.5 text-sm text-content-300 hover:bg-surface-800"
         >
           {sortDirection === 'asc' ? '↑' : '↓'}
         </button>
@@ -83,8 +83,8 @@ export function LibraryPage() {
               aria-label={`${mode} view`}
               className={`px-2.5 py-1.5 text-sm transition-colors ${
                 viewMode === mode
-                  ? 'bg-surface-700 text-slate-100'
-                  : 'bg-surface-900 text-slate-500 hover:text-slate-300'
+                  ? 'bg-surface-700 text-content-100'
+                  : 'bg-surface-900 text-content-500 hover:text-content-300'
               }`}
             >
               {mode === 'grid' ? '▦' : '☰'}
@@ -97,7 +97,7 @@ export function LibraryPage() {
         </Button>
       </header>
 
-      {status === 'loading' && <p className="text-sm text-slate-500">Loading library…</p>}
+      {status === 'loading' && <p className="text-sm text-content-500">Loading library…</p>}
 
       {status === 'failed' && (
         <div className="rounded-lg border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-300">
@@ -108,7 +108,7 @@ export function LibraryPage() {
       {status === 'succeeded' && totalGames === 0 && <EmptyLibrary />}
 
       {status === 'succeeded' && totalGames > 0 && games.length === 0 && (
-        <p className="text-sm text-slate-500">No games match “{searchQuery}”.</p>
+        <p className="text-sm text-content-500">No games match “{searchQuery}”.</p>
       )}
 
       {games.length > 0 &&
@@ -133,8 +133,8 @@ function EmptyLibrary() {
   const dispatch = useAppDispatch()
   return (
     <div className="rounded-xl border border-dashed border-surface-600 bg-surface-850/50 p-12 text-center">
-      <p className="text-lg text-slate-300">Your library is empty</p>
-      <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+      <p className="text-lg text-content-300">Your library is empty</p>
+      <p className="mx-auto mt-2 max-w-md text-sm text-content-500">
         Add a game by pointing LaunchPad at its executable. Set a save folder too and LaunchPad
         will back it up automatically every time you play.
       </p>

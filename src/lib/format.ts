@@ -112,6 +112,19 @@ export function coverUrl(game: Game): string | null {
 }
 
 /**
+ * URL for the wide backdrop art, or null when the game has none.
+ *
+ * Uses the same `cover` namespace rather than a new one: hero files live in the
+ * same managed folder, so the protocol handler already serves them and a second
+ * namespace would be a second containment check to keep correct for no benefit.
+ * The namespace names the directory, not the shape of what is in it.
+ */
+export function heroUrl(game: Game): string | null {
+  if (!game.heroImagePath) return null
+  return `lpasset://cover/${encodeURIComponent(basename(game.heroImagePath))}`
+}
+
+/**
  * Derives a display name from an executable path:
  * "hollow_knight.exe" -> "Hollow Knight".
  *
